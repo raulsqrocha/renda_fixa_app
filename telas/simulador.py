@@ -12,7 +12,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 
-from core.financas import retorno_cenario_ipca, retorno_mam_antecipado
+from core.financas import retorno_cenario_ipca, retorno_mam_antecipado, formatar_brl
 from core.dados import obter_dados_completos, CATEGORIAS_TITULOS, TITULOS_CONFIG
 from core.graficos import (
     grafico_ipca_historico,
@@ -177,7 +177,7 @@ def render():
             rows.append({
                 "Cenário":            nome,
                 "Taxa Nominal a.a.":  f"{c['taxa_nominal_aa']:.2f}%",
-                "Valor Final":        f"R$ {c['valor_final']:,.2f}",
+                "Valor Final":        formatar_brl(c['valor_final']),
                 "Retorno Nominal":    f"{c['retorno_nominal_pct']:.1f}%",
                 "Ganho Real ✅":      f"+{c['retorno_real_pct']:.1f}%",
             })

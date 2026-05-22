@@ -12,7 +12,7 @@ Estrutura:
 """
 
 import streamlit as st
-from telas import dashboard, simulador
+from telas import dashboard, simulador, batalha
 
 st.set_page_config(
     page_title="Renda Fixa | Marcação a Mercado",
@@ -105,7 +105,7 @@ with st.sidebar:
 
     pagina = st.radio(
         "Navegação",
-        options=["🏠   Seu Dashboard", "🔬   Simulador Avançado"],
+        options=["🏠   Seu Dashboard", "🔬   Simulador Avançado (MaM)", "🎯   Qual ativo escolher?"],
         label_visibility="collapsed",
     )
 
@@ -136,5 +136,7 @@ as credenciais em `secrets.toml`.
 # ---------------------------------------------------------------------------
 if "Dashboard" in pagina:
     dashboard.render()
-else:
+elif "Simulador" in pagina:
     simulador.render()
+else:
+    batalha.render()

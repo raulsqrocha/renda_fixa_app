@@ -10,6 +10,12 @@ from datetime import date, timedelta
 from typing import List
 
 
+def formatar_brl(valor: float, casas: int = 2) -> str:
+    """Formata um valor no padrão monetário brasileiro: R$ 1.234,56"""
+    fmt = f"{valor:,.{casas}f}"
+    return "R$ " + fmt.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 # ---------------------------------------------------------------------------
 # Utilitários de datas
 # ---------------------------------------------------------------------------
@@ -289,3 +295,207 @@ def retorno_cenario_ipca(
         'retorno_nominal_pct': (valor_final / valor_inicial - 1) * 100,
         'retorno_real_pct':  ((1 + taxa_real) ** anos - 1) * 100,
     }
+
+
+# ---------------------------------------------------------------------------
+# Batalha de Cenários — Pré vs Pós vs IPCA+
+# ---------------------------------------------------------------------------
+
+def retorno_saida_antecipada(
+    taxa_compra: float,
+    taxa_venda: float,
+    anos_total: float,
+    anos_saida: float,
+    tipo: str,
+    ipca: float = 0.0,
+) -> float:
+    """
+    Retorno nominal anualizado ao vender um título em anos_saida.
+
+    Se anos_saida >= anos_total: retorno certo de carrego (sem exposição MaM).
+    Se anos_saida < anos_total:  retorno ajustado pelo preço de mercado na saída.
+
+    Para Prefixado:
+        PU_H/PU_0 = (1+taxa_compra)^T / (1+taxa_venda)^(T-H)
+    Para IPCA+:
+        PU_H/PU_0 = (1+IPCA)^H × (1+taxa_compra)^T / (1+taxa_venda)^(T-H)
+    Para Selic:
+        Retorno ≈ taxa_compra (pós-fixado — taxa_venda não afeta preço)
+    """
+    H = anos_saida
+    T = anos_total
+
+    if tipo == "selic":
+        return taxa_compra
+
+    if H >= T:
+        if tipo == "pre":
+            return taxa_compra
+        else:
+            return (1 + ipca) * (1 + taxa_compra) - 1
+
+    if tipo == "pre":
+        ratio = (1 + taxa_compra) ** T / (1 + taxa_venda) ** (T - H)
+        return ratio ** (1 / H) - 1
+    else:
+        ratio = (1 + ipca) ** H * (1 + taxa_compra) ** T / (1 + taxa_venda) ** (T - H)
+        return ratio ** (1 / H) - 1
+
+
+def aliquota_ir_renda_fixa(horizonte_anos: float) -> float:
+    """Alíquota regressiva de IR sobre renda fixa (Tesouro Direto)."""
+    dias = horizonte_anos * 365
+    if dias <= 180:  return 0.225
+    if dias <= 360:  return 0.200
+    if dias <= 720:  return 0.175
+    return 0.150
+
+
+def retorno_liquido_ir(retorno_bruto_anual: float, horizonte_anos: float) -> float:
+    """
+    Converte retorno bruto anualizado em retorno líquido após IR regressivo.
+
+    IR incide sobre o lucro nominal acumulado no período.
+    Prejuízo (lucro <= 0) não sofre IR — retorno bruto é mantido.
+    """
+    aliq  = aliquota_ir_renda_fixa(horizonte_anos)
+    lucro = (1 + retorno_bruto_anual) ** horizonte_anos - 1
+    if lucro <= 0:
+        return retorno_bruto_anual
+    lucro_liq = lucro * (1 - aliq)
+    return (1 + lucro_liq) ** (1 / horizonte_anos) - 1
+
+
+def analise_batalha(
+    nome: str,
+    tipo: str,
+    taxa: float,
+    anos_total: float,
+    anos_saida: float,
+    ipca: float,
+    choque: float = 0.01,
+    com_ir: bool = False,
+) -> dict:
+    """
+    Calcula retorno e risco para um título nos três cenários de taxa.
+
+    Cenários (choque de 1 p.p. por padrão):
+      Adverso   — taxas sobem (Selic: taxas caem  → rende menos)
+      Neutro    — taxas inalteradas
+      Favorável — taxas caem  (Selic: taxas sobem → rende mais)
+
+    Risco = desvio-padrão dos três retornos anualizados.
+    Se com_ir=True, IR regressivo é aplicado sobre o lucro antes do cálculo de risco.
+    """
+    t  = taxa  / 100
+    ip = ipca  / 100
+    ck = choque / 100
+
+    if tipo == "selic":
+        r_adv = retorno_saida_antecipada(t - ck, t - ck, anos_total, anos_saida, "selic")
+        r_neu = retorno_saida_antecipada(t,      t,      anos_total, anos_saida, "selic")
+        r_fav = retorno_saida_antecipada(t + ck, t + ck, anos_total, anos_saida, "selic")
+    else:
+        r_adv = retorno_saida_antecipada(t, t + ck, anos_total, anos_saida, tipo, ip)
+        r_neu = retorno_saida_antecipada(t, t,      anos_total, anos_saida, tipo, ip)
+        r_fav = retorno_saida_antecipada(t, t - ck, anos_total, anos_saida, tipo, ip)
+
+    if com_ir:
+        r_adv = retorno_liquido_ir(r_adv, anos_saida)
+        r_neu = retorno_liquido_ir(r_neu, anos_saida)
+        r_fav = retorno_liquido_ir(r_fav, anos_saida)
+
+    risco_std = float(np.std([r_adv, r_neu, r_fav]))
+
+    anos_expo = max(0.0, anos_total - anos_saida)
+    if tipo == "selic" or anos_expo == 0:
+        risco_label = "🟢 Baixo"
+    elif anos_expo <= 2:
+        risco_label = "🟡 Moderado"
+    elif anos_expo <= 5:
+        risco_label = "🟠 Médio-Alto"
+    else:
+        risco_label = "🔴 Alto"
+
+    r_real_neu = (1 + r_neu) / (1 + ip) - 1 if ip > 0 else r_neu
+
+    return {
+        "nome":        nome,
+        "tipo":        tipo,
+        "ret_adv":     r_adv  * 100,
+        "ret_neu":     r_neu  * 100,
+        "ret_fav":     r_fav  * 100,
+        "ret_real":    r_real_neu * 100,
+        "risco_std":   risco_std  * 100,
+        "risco_label": risco_label,
+        "anos_expo":   anos_expo,
+        "hold_to_mat": anos_saida >= anos_total,
+    }
+
+
+def calcular_batalha(
+    capital: float,
+    taxa_selic: float,
+    taxa_pre: float,
+    taxa_real_ipca: float,
+    ipca: float,
+    anos: int,
+) -> dict:
+    """
+    Compara Tesouro Selic, Prefixado e IPCA+ ao final do prazo.
+
+    Retorna dict com valor_final, lucro_nominal e ganho_real_pct para cada instrumento.
+    Ganho real = poder de compra acima da inflação projetada.
+    """
+    selic_d = taxa_selic      / 100
+    pre_d   = taxa_pre        / 100
+    real_d  = taxa_real_ipca  / 100
+    ipca_d  = ipca            / 100
+
+    vf_selic = capital * (1 + selic_d) ** anos
+    vf_pre   = capital * (1 + pre_d)   ** anos
+    vf_ipca  = capital * ((1 + ipca_d) * (1 + real_d)) ** anos
+
+    fator_ipca = (1 + ipca_d) ** anos
+
+    return {
+        'selic': {
+            'valor_final':    vf_selic,
+            'lucro_nominal':  vf_selic - capital,
+            'ganho_real_pct': (vf_selic / capital / fator_ipca - 1) * 100,
+        },
+        'pre': {
+            'valor_final':    vf_pre,
+            'lucro_nominal':  vf_pre - capital,
+            'ganho_real_pct': (vf_pre / capital / fator_ipca - 1) * 100,
+        },
+        'ipca_mais': {
+            'valor_final':    vf_ipca,
+            'lucro_nominal':  vf_ipca - capital,
+            # Ganho real do IPCA+ = (1 + taxa_real)^anos − 1, sempre idêntico ao contratado
+            'ganho_real_pct': ((1 + real_d) ** anos - 1) * 100,
+        },
+    }
+
+
+def trajetoria_batalha(
+    capital: float,
+    taxa_selic: float,
+    taxa_pre: float,
+    taxa_real_ipca: float,
+    ipca: float,
+    anos: int,
+) -> pd.DataFrame:
+    """Série anual (ano 0 → N) dos três instrumentos para o gráfico de trajetória."""
+    selic_d = taxa_selic     / 100
+    pre_d   = taxa_pre       / 100
+    real_d  = taxa_real_ipca / 100
+    ipca_d  = ipca           / 100
+
+    ts = range(anos + 1)
+    return pd.DataFrame({
+        'ano':       list(ts),
+        'selic':     [capital * (1 + selic_d) ** t for t in ts],
+        'pre':       [capital * (1 + pre_d)   ** t for t in ts],
+        'ipca_mais': [capital * ((1 + ipca_d) * (1 + real_d)) ** t for t in ts],
+    })

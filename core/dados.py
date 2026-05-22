@@ -28,7 +28,12 @@ import pytz
 # ---------------------------------------------------------------------------
 
 URL_BCB_IPCA    = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/132?formato=json"
-URL_TESOURO     = "https://www.tesourodireto.com.br/json/br/com/b3/tesourodireto/component/aviso/Search.json"
+# Tesouro Transparente — CSV oficial, gratuito, sem auth, atualização diária
+URL_TESOURO_CSV = (
+    "https://www.tesourotransparente.gov.br/ckan/dataset/"
+    "df56aa42-484a-4a59-8184-7676580c81e3/resource/"
+    "796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv"
+)
 
 # VNA da NTN-B em dez/2014 (fonte: ANBIMA histórico) — base para cálculo via BCB
 VNA_BASE_DEZ2014 = 2_712.00
@@ -44,20 +49,40 @@ VNA_FALLBACK = 4_650.00
 # Principal e RendA+/Educar+ (acumulação) → sem cupons → gráfico liso
 # Juros Semestrais → com cupons → gráfico dente de serra
 TITULOS_CONFIG: dict = {
-    # IPCA+ Principal (sem cupons)
-    "Tesouro IPCA+ 2029": {"vencimento": date(2029, 5, 15),  "tem_cupom": False},
-    "Tesouro IPCA+ 2035": {"vencimento": date(2035, 5, 15),  "tem_cupom": False},
-    "Tesouro IPCA+ 2045": {"vencimento": date(2045, 5, 15),  "tem_cupom": False},
+    # IPCA+ Principal (sem cupons) — mai/2026
+    "Tesouro IPCA+ 2032": {"vencimento": date(2032, 8, 15),  "tem_cupom": False},
+    "Tesouro IPCA+ 2040": {"vencimento": date(2040, 8, 15),  "tem_cupom": False},
+    "Tesouro IPCA+ 2050": {"vencimento": date(2050, 8, 15),  "tem_cupom": False},
     # IPCA+ com Juros Semestrais (cupom a cada 6 meses)
-    "Tesouro IPCA+ com Juros Semestrais 2032": {"vencimento": date(2032, 8, 15), "tem_cupom": True},
-    "Tesouro IPCA+ com Juros Semestrais 2040": {"vencimento": date(2040, 8, 15), "tem_cupom": True},
-    "Tesouro IPCA+ com Juros Semestrais 2055": {"vencimento": date(2055, 5, 15), "tem_cupom": True},
-    # RendA+ — fase de acumulação (sem cupons intermediários)
+    "Tesouro IPCA+ com Juros Semestrais 2037": {"vencimento": date(2037, 5, 15), "tem_cupom": True},
+    "Tesouro IPCA+ com Juros Semestrais 2045": {"vencimento": date(2045, 5, 15), "tem_cupom": True},
+    "Tesouro IPCA+ com Juros Semestrais 2060": {"vencimento": date(2060, 8, 15), "tem_cupom": True},
+    # Tesouro Renda+ Aposentadoria Extra (exibido como RendA+)
     **{f"Tesouro RendA+ {ano}": {"vencimento": date(ano, 12, 15), "tem_cupom": False}
        for ano in [2030, 2035, 2040, 2045, 2050, 2055, 2060, 2065]},
-    # Educar+ — fase de acumulação (sem cupons intermediários)
+    # Tesouro Educa+ (nome real no CSV; exibido como Educar+ no app)
     **{f"Tesouro Educar+ {ano}": {"vencimento": date(ano, 12, 15), "tem_cupom": False}
-       for ano in range(2026, 2043)},
+       for ano in range(2027, 2045)},
+}
+
+# ---------------------------------------------------------------------------
+# Catálogo adicional: Selic e Prefixado (usados na Batalha de Cenários)
+# taxa_ref = None para Selic porque a taxa vem da projeção do usuário
+# ---------------------------------------------------------------------------
+
+TITULOS_BATALHA: dict = {
+    # Pós-Fixado (taxa_ref=None: vem da projeção do usuário)
+    "Tesouro Selic 2031":     {"vencimento": date(2031, 3, 1),  "tipo": "selic", "taxa_ref": None},
+    "Tesouro Reserva":        {"vencimento": date(2027, 3, 1),  "tipo": "selic", "taxa_ref": None},
+    # Pré-Fixado
+    "Tesouro Prefixado 2029": {"vencimento": date(2029, 1, 1),  "tipo": "pre",   "taxa_ref": 13.50},
+    "Tesouro Prefixado 2032": {"vencimento": date(2032, 1, 1),  "tipo": "pre",   "taxa_ref": 13.89},
+    "Tesouro Prefixado com Juros Semestrais 2037": {"vencimento": date(2037, 1, 1), "tipo": "pre", "taxa_ref": 14.00},
+    # Todos os IPCA+, RendA+ e Educar+ do catálogo completo
+    **{
+        nome: {"vencimento": cfg["vencimento"], "tipo": "ipca_mais", "taxa_ref": None}
+        for nome, cfg in TITULOS_CONFIG.items()
+    },
 }
 
 # Seletor de dois níveis: categoria → lista de títulos
@@ -69,18 +94,32 @@ CATEGORIAS_TITULOS: dict = {
     "Tesouro Educar+":             [k for k in TITULOS_CONFIG if "Educar+" in k],
 }
 
-# Taxas de referência para o fallback (mai/2026) — atualizar com dados do Tesouro
+# Taxas de referência para o fallback — extraídas do Tesouro Transparente em 20/05/2026
 _TAXAS_REF: dict = {
-    "Tesouro IPCA+ 2029": 7.45,
-    "Tesouro IPCA+ 2035": 7.82,
-    "Tesouro IPCA+ 2045": 7.93,
-    "Tesouro IPCA+ com Juros Semestrais 2032": 7.60,
-    "Tesouro IPCA+ com Juros Semestrais 2040": 7.78,
-    "Tesouro IPCA+ com Juros Semestrais 2055": 7.95,
-    **{f"Tesouro RendA+ {ano}": round(7.20 + i * 0.10, 2)
-       for i, ano in enumerate([2030, 2035, 2040, 2045, 2050, 2055, 2060, 2065])},
-    **{f"Tesouro Educar+ {ano}": round(7.10 + i * 0.025, 2)
-       for i, ano in enumerate(range(2026, 2043))},
+    # IPCA+ Principal
+    "Tesouro IPCA+ 2032":  7.83,
+    "Tesouro IPCA+ 2040":  7.32,
+    "Tesouro IPCA+ 2050":  7.04,
+    # IPCA+ Juros Semestrais
+    "Tesouro IPCA+ com Juros Semestrais 2037":  7.59,
+    "Tesouro IPCA+ com Juros Semestrais 2045":  7.35,
+    "Tesouro IPCA+ com Juros Semestrais 2060":  7.22,
+    # Renda+ Aposentadoria Extra
+    "Tesouro RendA+ 2030": 7.82,
+    "Tesouro RendA+ 2035": 7.65,
+    "Tesouro RendA+ 2040": 7.50,
+    "Tesouro RendA+ 2045": 7.38,
+    "Tesouro RendA+ 2050": 7.28,
+    "Tesouro RendA+ 2055": 7.20,
+    "Tesouro RendA+ 2060": 7.14,
+    "Tesouro RendA+ 2065": 7.08,
+    # Educar+ (Tesouro Educa+ no CSV)
+    "Tesouro Educar+ 2027": 8.12, "Tesouro Educar+ 2028": 8.07, "Tesouro Educar+ 2029": 8.01,
+    "Tesouro Educar+ 2030": 7.95, "Tesouro Educar+ 2031": 7.90, "Tesouro Educar+ 2032": 7.85,
+    "Tesouro Educar+ 2033": 7.80, "Tesouro Educar+ 2034": 7.75, "Tesouro Educar+ 2035": 7.70,
+    "Tesouro Educar+ 2036": 7.65, "Tesouro Educar+ 2037": 7.59, "Tesouro Educar+ 2038": 7.52,
+    "Tesouro Educar+ 2039": 7.46, "Tesouro Educar+ 2040": 7.41, "Tesouro Educar+ 2041": 7.36,
+    "Tesouro Educar+ 2042": 7.32, "Tesouro Educar+ 2043": 7.28, "Tesouro Educar+ 2044": 7.24,
 }
 
 
@@ -185,50 +224,91 @@ def calcular_vna_via_bcb(df_ipca: pd.DataFrame) -> float:
 # Tesouro Direto — preços e taxas
 # ---------------------------------------------------------------------------
 
+def _construir_nome_titulo(tipo_csv: str, ano_venc: int) -> str | None:
+    """
+    Mapeia o nome do tipo no CSV do Tesouro Transparente para o nome interno do app.
+    Normaliza variantes de acento e mantém consistência com TITULOS_CONFIG.
+    """
+    t = tipo_csv.strip()
+    if t == "Tesouro IPCA+":
+        return f"Tesouro IPCA+ {ano_venc}"
+    if t == "Tesouro IPCA+ com Juros Semestrais":
+        return f"Tesouro IPCA+ com Juros Semestrais {ano_venc}"
+    if "Renda+" in t or "RendA+" in t:
+        return f"Tesouro RendA+ {ano_venc}"
+    if "Educa+" in t:
+        return f"Tesouro Educar+ {ano_venc}"
+    if t == "Tesouro Selic":
+        return f"Tesouro Selic {ano_venc}"
+    if t == "Tesouro Prefixado":
+        return f"Tesouro Prefixado {ano_venc}"
+    if "Prefixado com Juros Semestrais" in t:
+        return f"Tesouro Prefixado com Juros Semestrais {ano_venc}"
+    if "Reserva" in t:
+        return "Tesouro Reserva"
+    return None
+
+
 @st.cache_data(ttl=3600 * 2)
 def buscar_titulos_tesouro(chave_cache: str) -> pd.DataFrame:
     """
-    Busca preços e taxas dos títulos Tesouro IPCA+ via API do Tesouro Direto.
+    Busca preços e taxas de TODOS os títulos via CSV do Tesouro Transparente.
 
-    O parâmetro `chave_cache` é gerado por `chave_cache_mercado()` e muda
-    às 14h — força atualização dos dados pós-fechamento sem agendador externo.
+    Fonte: dados.tesourotransparente.gov.br — oficial, gratuita, sem autenticação.
+    Filtra para a data mais recente disponível no arquivo e descarta títulos
+    com vencimento em menos de 30 dias.
     """
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (StreamlitApp/1.0)"}
-        resp = requests.get(URL_TESOURO, headers=headers, timeout=15)
+        from io import StringIO
+        resp = requests.get(URL_TESOURO_CSV, timeout=30)
         resp.raise_for_status()
 
-        lista = resp.json().get("response", {}).get("TrsrBdTradgList", [])
+        df_raw = pd.read_csv(
+            StringIO(resp.text),
+            sep=";",
+            decimal=",",
+            dayfirst=True,
+            parse_dates=["Data Vencimento", "Data Base"],
+        )
+        df_raw.columns = df_raw.columns.str.strip()
+
+        data_ref = df_raw["Data Base"].max()
+        df = df_raw[df_raw["Data Base"] == data_ref].copy()
+
+        hoje = pd.Timestamp(date.today())
+        df = df[df["Data Vencimento"] > hoje + pd.Timedelta(days=30)]
+        df = df[~df["Tipo Titulo"].str.contains("IGPM", na=False)]
+
+        def _f(v):
+            try:
+                return float(str(v).replace(",", ".").replace(" ", "")) or 0.0
+            except Exception:
+                return 0.0
+
+        nomes_validos = set(TITULOS_CONFIG) | set(TITULOS_BATALHA)
+
         registros = []
-
-        for item in lista:
-            bd   = item.get("TrsrBd", {})
-            nome = bd.get("nm", "")
-
-            if not any(kw in nome for kw in ("IPCA", "RendA+", "Educar+")):
+        for _, row in df.iterrows():
+            tipo_csv = str(row["Tipo Titulo"]).strip()
+            venc = row["Data Vencimento"]
+            if pd.isnull(venc):
                 continue
-
-            # Campos: a API usa nomes distintos dependendo da versão — testamos os dois
-            pu_compra = float(bd.get("BuyVal") or bd.get("VndVal") or 0)
-            pu_venda  = float(bd.get("SellVal") or bd.get("InvstmtVal") or 0)
-
+            nome = _construir_nome_titulo(tipo_csv, venc.year)
+            if not nome or nome not in nomes_validos:
+                continue
             registros.append({
-                "nome":       nome,
-                "vencimento": str(bd.get("mtrtyDt", ""))[:10],
-                "taxa_compra": float(bd.get("anulInvstmtRate") or 0),
-                "taxa_venda":  float(bd.get("anulRedRate") or 0),
-                "pu_compra":  pu_compra,
-                "pu_venda":   pu_venda,
+                "nome":        nome,
+                "vencimento":  venc.strftime("%Y-%m-%d"),
+                "taxa_compra": _f(row.get("Taxa Compra Manha", 0)),
+                "taxa_venda":  _f(row.get("Taxa Venda Manha",  0)),
+                "pu_compra":   _f(row.get("PU Compra Manha",   0)),
+                "pu_venda":    _f(row.get("PU Venda Manha",    0)),
             })
 
         if not registros:
             return _titulos_fallback()
 
-        df = pd.DataFrame(registros)
-        # Filtra títulos que já venceram ou vencem em menos de 30 dias
-        df["vencimento_dt"] = pd.to_datetime(df["vencimento"], errors="coerce")
-        df = df[df["vencimento_dt"] > pd.Timestamp(date.today() + timedelta(days=30))]
-        return df.drop(columns=["vencimento_dt"]).reset_index(drop=True)
+        return pd.DataFrame(registros).reset_index(drop=True)
 
     except Exception:
         return _titulos_fallback()
@@ -236,12 +316,13 @@ def buscar_titulos_tesouro(chave_cache: str) -> pd.DataFrame:
 
 def _titulos_fallback() -> pd.DataFrame:
     """
-    Preços e taxas de referência gerados dinamicamente a partir de TITULOS_CONFIG.
-    O PU é aproximado por VNA / (1+r)^T — suficiente para uso educacional.
-    Atualizar _TAXAS_REF periodicamente com base no site do Tesouro.
+    Dados de referência para quando o CSV do Tesouro Transparente está indisponível.
+    Inclui IPCA+, RendA+, Educar+ (via TITULOS_CONFIG) e Selic/Prefixado (via TITULOS_BATALHA).
+    Taxas em _TAXAS_REF extraídas em 20/05/2026 — atualizar periodicamente.
     """
     hoje = date.today()
     registros = []
+
     for nome, cfg in TITULOS_CONFIG.items():
         venc = cfg["vencimento"]
         if venc <= hoje:
@@ -257,12 +338,76 @@ def _titulos_fallback() -> pd.DataFrame:
             "pu_compra":   pu,
             "pu_venda":    round(pu * 0.995, 2),
         })
+
+    for nome, cfg in TITULOS_BATALHA.items():
+        if cfg["tipo"] not in ("selic", "pre"):
+            continue
+        venc = cfg["vencimento"]
+        if venc <= hoje:
+            continue
+        taxa = cfg.get("taxa_ref") or (13.25 if cfg["tipo"] == "selic" else 14.0)
+        registros.append({
+            "nome":        nome,
+            "vencimento":  venc.isoformat(),
+            "taxa_compra": taxa,
+            "taxa_venda":  round(taxa + 0.02, 2),
+            "pu_compra":   0.0,
+            "pu_venda":    0.0,
+        })
+
     return pd.DataFrame(registros)
 
 
 # ---------------------------------------------------------------------------
 # Ponto de entrada central
 # ---------------------------------------------------------------------------
+
+def montar_catalogo_batalha(df_titulos: pd.DataFrame, selic_projetada: float) -> list:
+    """
+    Monta catálogo dinâmico de todos os títulos para a tela 'Qual Ativo Escolher?'.
+
+    Fonte primária: DataFrame completo do Tesouro Transparente (CSV).
+    Para Selic: sobrescreve a taxa com a projeção do usuário (pós-fixado acompanha Selic).
+    """
+    hoje = date.today()
+    catalogo = []
+
+    if df_titulos.empty:
+        return catalogo
+
+    for _, row in df_titulos.iterrows():
+        nome = str(row["nome"]).strip()
+        try:
+            venc = date.fromisoformat(str(row["vencimento"])[:10])
+        except Exception:
+            continue
+
+        if venc <= hoje + timedelta(days=30):
+            continue
+
+        anos = round((venc - hoje).days / 365, 2)
+
+        if "Selic" in nome or "Reserva" in nome:
+            tipo = "selic"
+            taxa = selic_projetada
+        elif "Prefixado" in nome:
+            tipo = "pre"
+            taxa = float(row.get("taxa_compra") or 14.0)
+        else:
+            tipo = "ipca_mais"
+            taxa = float(row.get("taxa_compra") or 7.50)
+
+        catalogo.append({
+            "nome":       nome,
+            "tipo":       tipo,
+            "vencimento": venc,
+            "anos_total": anos,
+            "taxa":       taxa,
+        })
+
+    ordem = {"selic": 0, "pre": 1, "ipca_mais": 2}
+    return sorted(catalogo, key=lambda x: (ordem.get(x["tipo"], 3), x["vencimento"]))
+
 
 def obter_dados_completos() -> tuple[pd.DataFrame, pd.DataFrame, float]:
     """

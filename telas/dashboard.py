@@ -14,6 +14,7 @@ from core.financas import (
     pu_ntnb,
     metricas_carteira,
     serie_paradoxo,
+    formatar_brl,
 )
 from core.dados import obter_dados_completos, CATEGORIAS_TITULOS, TITULOS_CONFIG
 from core.graficos import grafico_paradoxo
@@ -165,12 +166,12 @@ def render():
         delta_vs_investido = resultado["mam"] - valor_investido
         # O sinal deve ser o primeiro caractere para o Streamlit detectar a cor corretamente
         if delta_vs_investido < 0:
-            delta_mam_str = f"-R$ {abs(delta_vs_investido):,.2f} vs. capital investido"
+            delta_mam_str = f"-{formatar_brl(abs(delta_vs_investido))} vs. capital investido"
         else:
-            delta_mam_str = f"+R$ {delta_vs_investido:,.2f} vs. capital investido"
+            delta_mam_str = f"+{formatar_brl(delta_vs_investido)} vs. capital investido"
         st.metric(
             label="💸  Resgate Antecipado Hoje",
-            value=f"R$ {resultado['mam']:,.2f}",
+            value=formatar_brl(resultado['mam']),
             delta=delta_mam_str,
             delta_color="normal",
             help="Valor que você receberia se vender hoje — sujeito à Marcação a Mercado",
@@ -200,7 +201,7 @@ def render():
             )
         st.metric(
             label=label_venc,
-            value=f"R$ {valor_vencimento:,.2f}",
+            value=formatar_brl(valor_vencimento),
             delta=f"+{ganho_real_pct:.1f}% real acumulado",
             delta_color="normal",
             help=help_venc,
@@ -280,7 +281,7 @@ título pelo seu valor intrínseco (VNA + cupons acumulados), eliminando qualque
     st.info(
         f"📅 **Vencimento:** {data_vencimento.strftime('%d/%m/%Y')}  ·  "
         f"**Anos restantes:** {anos_restantes}  ·  "
-        f"**VNA estimado (BCB):** R$ {vna:,.2f}  ·  "
+        f"**VNA estimado (BCB):** {formatar_brl(vna)}  ·  "
         f"**Taxa de mercado:** {taxa_mercado_pct:.2f}% a.a. real  ·  "
         f"**Quantidade:** {resultado['quantidade']:.4f} títulos",
     )

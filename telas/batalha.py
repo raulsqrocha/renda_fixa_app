@@ -1,0 +1,417 @@
+"""
+Tela 3 — Qual Ativo Escolher?
+
+Responde a pergunta prática do investidor: dado o meu horizonte de saída,
+qual título do Tesouro Direto oferece o melhor retorno real pelo menor risco de MaM?
+"""
+
+import streamlit as st
+import pandas as pd
+
+from core.dados import obter_dados_completos, montar_catalogo_batalha
+from core.financas import (
+    analise_batalha,
+    formatar_brl,
+    aliquota_ir_renda_fixa,
+    retorno_liquido_ir,
+    retorno_saida_antecipada,
+)
+from core.graficos import grafico_markowitz, grafico_cenarios_batalha
+
+_EX = 10_000.0  # Capital fixo para exemplos do painel educativo
+
+_TIPO_EMOJI = {"selic": "💰", "pre": "📌", "ipca_mais": "🛡️"}
+_TIPO_NOME  = {
+    "selic":     "Pós-Fixado (Selic)",
+    "pre":       "Pré-Fixado",
+    "ipca_mais": "IPCA+ / RendA+ / Educar+",
+}
+
+_DEFAULTS = [
+    "Tesouro Selic 2031",
+    "Tesouro Prefixado 2029",
+    "Tesouro Prefixado 2032",
+    "Tesouro IPCA+ 2032",
+    "Tesouro IPCA+ 2040",
+]
+
+_RISCO_MAP = {
+    0: "🟢 Nenhuma",
+    1: "🟡 Baixa",
+    2: "🟠 Média",
+    3: "🔴 Alta",
+}
+
+def _risco_expo(tipo, anos_expo):
+    if tipo == "selic" or anos_expo == 0: return _RISCO_MAP[0]
+    if anos_expo <= 2:                    return _RISCO_MAP[1]
+    if anos_expo <= 5:                    return _RISCO_MAP[2]
+    return _RISCO_MAP[3]
+
+
+def _winner(analises: list) -> dict:
+    return max(analises, key=lambda a: a["ret_neu"] / max(a["risco_std"], 0.01))
+
+
+def _insight_texto(w: dict, horizonte: int, ipca: float, com_ir: bool) -> str:
+    nome  = w["nome"].replace("Tesouro ", "")
+    tipo  = w["tipo"]
+    expo  = w["anos_expo"]
+    ret   = w["ret_neu"]
+    ir_obs = " (líquido de IR)" if com_ir else ""
+
+    if tipo == "selic":
+        return (
+            f"**{nome}** é o mais indicado para seu horizonte de **{horizonte} ano(s)**{ir_obs}. "
+            f"Como pós-fixado, ele não sofre Marcação a Mercado — você pode sair a qualquer "
+            f"momento sem surpresas de preço. Retorno esperado: **{ret:.1f}% a.a.** "
+            f"Atenção: se a Selic cair, o rendimento cai junto — a taxa não é travada."
+        )
+    if tipo == "pre":
+        if expo == 0:
+            return (
+                f"**{nome}** vence dentro do seu horizonte{ir_obs} — você recebe os "
+                f"**{ret:.1f}% a.a.** com certeza, sem exposição à MaM. "
+                f"Taxa nominal travada acima da inflação projetada de {ipca:.1f}%: "
+                f"ganho real de **{w['ret_real']:.1f}% a.a.**"
+            )
+        return (
+            f"**{nome}** oferece **{ret:.1f}% a.a.**{ir_obs}, mas você sairá "
+            f"**{expo:.1f} anos antes do vencimento**. No cenário adverso "
+            f"(taxas +1 p.p.), o retorno cai para **{w['ret_adv']:.1f}%** — avalie "
+            f"se essa amplitude de risco é aceitável para o seu perfil."
+        )
+    if expo == 0:
+        return (
+            f"**{nome}** é o vencedor{ir_obs}: taxa real travada, proteção total contra "
+            f"inflação e vencimento alinhado ao horizonte. Ganho real: "
+            f"**{w['ret_real']:.1f}% a.a.** garantido independente do IPCA projetado ({ipca:.1f}%)."
+        )
+    return (
+        f"**{nome}** oferece o melhor equilíbrio retorno/risco{ir_obs}. "
+        f"Taxa real de **{w['ret_real']:.1f}% a.a.** protege o poder de compra, "
+        f"com {expo:.1f} anos de exposição à MaM. Cenário adverso: "
+        f"**{w['ret_adv']:.1f}%** — ainda positivo em termos reais."
+    )
+
+
+def render():
+    # -----------------------------------------------------------------------
+    # Cabeçalho
+    # -----------------------------------------------------------------------
+    st.markdown(
+        '<p class="titulo-principal">Qual Ativo Escolher?</p>'
+        '<p class="subtitulo">Informe quando precisa do dinheiro — o simulador compara '
+        'cada título Tesouro pelo retorno real e pelo risco de Marcação a Mercado '
+        'no <em>seu</em> horizonte.</p>',
+        unsafe_allow_html=True,
+    )
+
+    with st.spinner("Carregando dados do Tesouro Direto..."):
+        _, df_titulos, _ = obter_dados_completos()
+
+    # -----------------------------------------------------------------------
+    # Inputs — antes dos expanders para que o painel dinâmico use os valores
+    # -----------------------------------------------------------------------
+    st.subheader("⚙️  Configure sua Situação")
+
+    col_h, col_macro, col_sel = st.columns([1, 1.4, 1.6])
+
+    with col_h:
+        st.markdown("**Quando precisa do dinheiro?**")
+        horizonte = st.slider("Horizonte de saída (anos)", min_value=1, max_value=15, value=3)
+        capital   = st.number_input(
+            "Capital Inicial (R$)",
+            min_value=100.0, max_value=1_000_000.0,
+            value=10_000.0, step=500.0, format="%.2f",
+        )
+        com_ir = st.checkbox(
+            "Calcular com IR regressivo",
+            value=True,
+            help="Alíquota regressiva sobre o lucro nominal: 22,5% (≤6m) → 20% (≤1a) → 17,5% (≤2a) → 15% (>2a)",
+        )
+        if com_ir:
+            aliq = aliquota_ir_renda_fixa(horizonte)
+            st.caption(f"IR aplicado: **{aliq*100:.1f}%** sobre o lucro (horizonte = {horizonte} ano(s))")
+
+    with col_macro:
+        st.markdown("**Projeção Macroeconômica**")
+        ipca_pct  = st.slider("🌡️ IPCA Projetado (% a.a.)",  1.0, 15.0, 5.0,  0.1,  format="%.1f%%")
+        selic_pct = st.slider("🏦 Selic Projetada (% a.a.)", 2.0, 25.0, 13.0, 0.25, format="%.2f%%")
+        choque_pp = st.slider(
+            "⚡ Choque de Taxa (p.p.)", 0.25, 3.0, 1.0, 0.25, format="%.2f p.p.",
+            help="Magnitude da variação de juros nos cenários Adverso e Favorável",
+        )
+
+    with col_sel:
+        st.markdown("**Títulos a Comparar**")
+        catalogo    = montar_catalogo_batalha(df_titulos, selic_pct)
+        opcoes      = [t["nome"] for t in catalogo]
+        defaults_ok = [d for d in _DEFAULTS if d in opcoes]
+        selecionados = st.multiselect(
+            "Selecione os títulos",
+            options=opcoes,
+            default=defaults_ok,
+            help="Todos os títulos disponíveis — IPCA+, RendA+, Educar+, Prefixado e Selic.",
+        )
+
+    # -----------------------------------------------------------------------
+    # Painel Educativo Dinâmico
+    # -----------------------------------------------------------------------
+    H  = float(horizonte)
+    ip = ipca_pct  / 100
+    sl = selic_pct / 100
+
+    selic_ex = next((t for t in catalogo if t["tipo"] == "selic"), None)
+    pre_ex   = next((t for t in catalogo if t["tipo"] == "pre"),   None)
+    ipca_ex  = (
+        next((t for t in catalogo if t["tipo"] == "ipca_mais" and "IPCA+ 2029" in t["nome"]), None)
+        or next((t for t in catalogo if t["tipo"] == "ipca_mais"), None)
+    )
+
+    st.divider()
+    with st.expander("📚  Entenda como cada título se comporta no seu cenário", expanded=True):
+        st.caption(
+            f"Exemplos calculados para: IPCA {ipca_pct:.1f}% · Selic {selic_pct:.1f}% · "
+            f"Horizonte {horizonte} ano(s) · R$ {_EX:,.0f}"
+            + (" · com IR" if com_ir else " · sem IR")
+        )
+
+        col_d1, col_d2, col_d3 = st.columns(3)
+
+        # ---- Selic ----
+        with col_d1:
+            st.markdown("#### 💰 Tesouro Selic — Pós-Fixado")
+            vf_sl   = _EX * (1 + sl) ** H
+            vf_sl_l = _EX * (1 + retorno_liquido_ir(sl, H)) ** H if com_ir else vf_sl
+            real_sl = ((1 + sl) / (1 + ip)) ** H - 1
+            vf_adv  = _EX * (1 + max(sl - choque_pp/100, 0.001)) ** H
+
+            st.metric(
+                "Retorno estimado",
+                f"{selic_pct:.2f}% a.a.",
+                f"Real projetado: {real_sl*100:.1f}% acima do IPCA",
+            )
+            st.markdown(f"""
+Com Selic em **{selic_pct:.1f}%**, R$10.000 viram **{formatar_brl(vf_sl_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
+
+✅ **Sem risco de MaM** — o preço sobe todos os dias, você pode sair a qualquer momento.
+
+⚠️ **Risco de reinvestimento:** se a Selic cair {choque_pp:.2f} p.p., o rendimento cai junto e R$10.000 viram **{formatar_brl(vf_adv)}** — não há proteção de taxa.
+
+**Use quando:** precisar de liquidez imediata ou não souber exatamente quando vai sacar.
+            """)
+
+        # ---- Prefixado ----
+        with col_d2:
+            st.markdown("#### 📌 Tesouro Prefixado — Pré-Fixado")
+            if pre_ex:
+                tp    = pre_ex["taxa"] / 100
+                T_pre = pre_ex["anos_total"]
+                expo_pre = max(0.0, T_pre - H)
+                vf_pr    = _EX * (1 + tp) ** H
+                vf_pr_l  = _EX * (1 + retorno_liquido_ir(tp, H)) ** H if com_ir else vf_pr
+                real_pre = ((1 + tp) / (1 + ip)) ** H - 1
+                r_adv_p  = retorno_saida_antecipada(tp, tp + choque_pp/100, T_pre, H, "pre")
+                if com_ir: r_adv_p = retorno_liquido_ir(r_adv_p, H)
+                vf_adv_p = _EX * (1 + r_adv_p) ** H
+
+                st.metric(
+                    f"Taxa travada — {pre_ex['nome'].replace('Tesouro ', '')}",
+                    f"{pre_ex['taxa']:.2f}% a.a.",
+                    f"Real projetado: {real_pre*100:.1f}% acima do IPCA",
+                )
+                st.markdown(f"""
+Taxa nominal de **{pre_ex['taxa']:.1f}%** travada na compra — independe do que a Selic fizer depois.
+
+R$10.000 → **{formatar_brl(vf_pr_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
+
+**Exposição MaM:** {expo_pre:.1f} ano(s) sobrando após sua saída → {_risco_expo("pre", expo_pre)}
+{"✅ Vence dentro do horizonte — sem risco de MaM." if expo_pre == 0 else
+f"⚠️ Se taxas subirem {choque_pp:.2f} p.p., R$10.000 → **{formatar_brl(vf_adv_p)}** ({r_adv_p*100:.1f}% a.a.)"}
+
+**Use quando:** quiser travar uma taxa alta acreditando que a Selic vai cair.
+                """)
+            else:
+                st.info("Nenhum Prefixado disponível no catálogo.")
+
+        # ---- IPCA+ ----
+        with col_d3:
+            st.markdown("#### 🛡️ Tesouro IPCA+ — Híbrido")
+            if ipca_ex:
+                tr    = ipca_ex["taxa"] / 100
+                T_ip  = ipca_ex["anos_total"]
+                expo_ip  = max(0.0, T_ip - H)
+                nom_ip   = (1 + tr) * (1 + ip) - 1
+                vf_ip    = _EX * (1 + nom_ip) ** H
+                vf_ip_l  = _EX * (1 + retorno_liquido_ir(nom_ip, H)) ** H if com_ir else vf_ip
+                real_ip  = tr
+                r_adv_ip = retorno_saida_antecipada(tr, tr + choque_pp/100, T_ip, H, "ipca_mais", ip)
+                if com_ir: r_adv_ip = retorno_liquido_ir(r_adv_ip, H)
+                vf_adv_ip = _EX * (1 + r_adv_ip) ** H
+
+                st.metric(
+                    f"Taxa real travada — {ipca_ex['nome'].replace('Tesouro ', '')}",
+                    f"IPCA + {ipca_ex['taxa']:.2f}% a.a.",
+                    f"Nominal: ~{nom_ip*100:.1f}% com IPCA {ipca_pct:.1f}%",
+                )
+                st.markdown(f"""
+**{ipca_ex['taxa']:.2f}% real** acima da inflação — garantido no contrato, qualquer que seja o IPCA.
+
+R$10.000 → **{formatar_brl(vf_ip_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
+
+**Exposição MaM:** {expo_ip:.1f} ano(s) sobrando após sua saída → {_risco_expo("ipca_mais", expo_ip)}
+{"✅ Vence dentro do horizonte — sem risco de MaM." if expo_ip == 0 else
+f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., R$10.000 → **{formatar_brl(vf_adv_ip)}** ({r_adv_ip*100:.1f}% a.a.)"}
+
+**Use quando:** quiser proteger o poder de compra no longo prazo ou se temer inflação alta.
+                """)
+            else:
+                st.info("Nenhum IPCA+ disponível no catálogo.")
+
+        # ---- Tabela de exposição por horizonte ----
+        st.markdown("---")
+        st.markdown(f"**📅 Exposição ao risco de MaM no horizonte de {horizonte} ano(s):**")
+
+        bonds_expo = [t for t in catalogo if t["nome"] in (selecionados if selecionados else _DEFAULTS)]
+        if bonds_expo:
+            rows_exp = []
+            for t in bonds_expo:
+                expo = max(0.0, t["anos_total"] - H)
+                rows_exp.append({
+                    "Título":           t["nome"].replace("Tesouro ", ""),
+                    "Tipo":             _TIPO_NOME[t["tipo"]],
+                    "Vence em":         t["vencimento"].strftime("%d/%m/%Y"),
+                    "Anos após saída":  f"{expo:.1f}",
+                    "Exposição MaM":    _risco_expo(t["tipo"], expo),
+                })
+            st.dataframe(pd.DataFrame(rows_exp), hide_index=True, use_container_width=True, height=220)
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Cálculos principais
+    # -----------------------------------------------------------------------
+    if not selecionados:
+        st.info("Selecione ao menos um título na seção acima para ver a análise completa.")
+        return
+
+    titulos_sel = [t for t in catalogo if t["nome"] in selecionados]
+    analises = [
+        analise_batalha(
+            nome       = t["nome"],
+            tipo       = t["tipo"],
+            taxa       = t["taxa"],
+            anos_total = t["anos_total"],
+            anos_saida = H,
+            ipca       = ipca_pct,
+            choque     = choque_pp,
+            com_ir     = com_ir,
+        )
+        for t in titulos_sel
+    ]
+
+    vencedor  = _winner(analises)
+    aliq_str  = f"{aliquota_ir_renda_fixa(H)*100:.1f}%" if com_ir else "bruto"
+
+    # -----------------------------------------------------------------------
+    # Semáforo de Risco
+    # -----------------------------------------------------------------------
+    ir_label = " (líquido de IR)" if com_ir else ""
+    st.subheader(f"📊  Análise para Horizonte de {horizonte} Ano(s){ir_label}")
+
+    cols = st.columns(min(len(analises), 6))
+    for col, a in zip(cols, analises):
+        nome_curto = a["nome"].replace("Tesouro ", "")
+        venc_date  = next(t["vencimento"].strftime("%d/%m/%Y") for t in titulos_sel if t["nome"] == a["nome"])
+        with col:
+            st.metric(
+                label=f"{_TIPO_EMOJI[a['tipo']]}  {nome_curto}{' 🏆' if a['nome'] == vencedor['nome'] else ''}",
+                value=f"{a['ret_neu']:.2f}% a.a.",
+                delta=a["risco_label"],
+                delta_color="off",
+                help=f"Venc: {venc_date} · {a['anos_expo']:.1f}a de exposição MaM",
+            )
+            st.caption(
+                f"Adv: **{a['ret_adv']:.1f}%** · "
+                f"Fav: **{a['ret_fav']:.1f}%** · "
+                f"Real: **{a['ret_real']:.1f}%**"
+            )
+
+    if len(analises) > 6:
+        st.caption(f"Mostrando os primeiros 6 de {len(analises)} títulos selecionados nos cards acima.")
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Fronteira de Markowitz + Barras de Cenário
+    # -----------------------------------------------------------------------
+    col_g1, col_g2 = st.columns(2)
+    with col_g1:
+        st.plotly_chart(grafico_markowitz(analises), use_container_width=True)
+    with col_g2:
+        st.plotly_chart(grafico_cenarios_batalha(analises), use_container_width=True)
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Recomendação
+    # -----------------------------------------------------------------------
+    st.subheader("🎯  Recomendação")
+    st.markdown(
+        f'<div class="badge-seguranca">💡 {_insight_texto(vencedor, horizonte, ipca_pct, com_ir)}</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.divider()
+
+    # -----------------------------------------------------------------------
+    # Tabela Comparativa
+    # -----------------------------------------------------------------------
+    st.subheader("📋  Detalhamento Completo")
+
+    linhas = []
+    for a in analises:
+        venc_str = next(t["vencimento"].strftime("%d/%m/%Y") for t in titulos_sel if t["nome"] == a["nome"])
+        linhas.append({
+            "Título":              a["nome"].replace("Tesouro ", "") + (" 🏆" if a["nome"] == vencedor["nome"] else ""),
+            "Vencimento":          venc_str,
+            "Retorno Neutro":      a["ret_neu"],
+            "Retorno Adverso":     a["ret_adv"],
+            "Retorno Favorável":   a["ret_fav"],
+            "Ganho Real (%)":      a["ret_real"],
+            "Risco (σ)":           a["risco_std"],
+            "Exposição MaM":       a["risco_label"],
+        })
+
+    df_tab      = pd.DataFrame(linhas)
+    idx_vencedor = next(i for i, a in enumerate(analises) if a["nome"] == vencedor["nome"])
+
+    def _cor(row):
+        if row.name == idx_vencedor:
+            return ["background-color: #2d2310; color: #fbd38d"] * len(row)
+        return ["background-color: #1C2331; color: #FAFAFA"] * len(row)
+
+    num_cols = ["Retorno Neutro", "Retorno Adverso", "Retorno Favorável", "Ganho Real (%)", "Risco (σ)"]
+    styled = (
+        df_tab.style
+        .apply(_cor, axis=1)
+        .format({c: lambda v: f"{v:+.2f}%" for c in num_cols})
+    )
+
+    st.dataframe(styled, use_container_width=True, hide_index=True)
+
+    vf_neutro = capital * (1 + vencedor["ret_neu"] / 100) ** horizonte
+    st.info(
+        f"💵 **{formatar_brl(capital)}** em **{vencedor['nome'].replace('Tesouro ', '')}** "
+        f"por {horizonte} ano(s) → **{formatar_brl(vf_neutro)}** no cenário neutro "
+        f"({vencedor['ret_neu']:.2f}% a.a. · IR {aliq_str})",
+        icon="📈",
+    )
+
+    ir_nota = f"IR {aliquota_ir_renda_fixa(H)*100:.1f}% aplicado sobre o lucro nominal." if com_ir else "Cálculo bruto (sem IR)."
+    st.caption(
+        f"⚠️ {ir_nota} Não considera IOF nem corretagem. "
+        "Taxas Prefixado são referências — confira os valores atuais no Tesouro Direto. "
+        "RendA+ e Educar+ têm regras específicas de IR na fase de renda (simplificado aqui)."
+    )
