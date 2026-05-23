@@ -20,7 +20,6 @@ from core.financas import (
 )
 from core.graficos import grafico_markowitz, grafico_cenarios_batalha
 
-_EX = 10_000.0  # Capital fixo para exemplos do painel educativo
 
 _TIPO_EMOJI = {"selic": "💰", "pre": "📌", "ipca_mais": "🛡️"}
 _TIPO_NOME  = {
@@ -229,7 +228,7 @@ def render():
     with st.expander("📚  Entenda como cada título se comporta no seu cenário", expanded=True):
         st.caption(
             f"Exemplos calculados para: IPCA {ipca_pct:.1f}% · Selic {selic_pct:.1f}% · "
-            f"Horizonte {horizonte} ano(s) · R$ {_EX:,.0f}"
+            f"Horizonte {horizonte} ano(s) · {formatar_brl(capital)}"
             + (" · com IR" if com_ir else " · sem IR")
         )
 
@@ -238,10 +237,10 @@ def render():
         # ---- Selic ----
         with col_d1:
             st.markdown("#### 💰 Tesouro Selic — Pós-Fixado")
-            vf_sl   = _EX * (1 + sl) ** H
-            vf_sl_l = _EX * (1 + retorno_liquido_ir(sl, H)) ** H if com_ir else vf_sl
+            vf_sl   = capital * (1 + sl) ** H
+            vf_sl_l = capital * (1 + retorno_liquido_ir(sl, H)) ** H if com_ir else vf_sl
             real_sl = ((1 + sl) / (1 + ip)) ** H - 1
-            vf_adv  = _EX * (1 + max(sl - choque_pp/100, 0.001)) ** H
+            vf_adv  = capital * (1 + max(sl - choque_pp/100, 0.001)) ** H
 
             st.metric(
                 "Retorno estimado",
@@ -249,11 +248,11 @@ def render():
                 f"Real projetado: {real_sl*100:.1f}% acima do IPCA",
             )
             st.markdown(f"""
-Com Selic em **{selic_pct:.1f}%**, R$10.000 viram **{formatar_brl(vf_sl_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
+Com Selic em **{selic_pct:.1f}%**, {formatar_brl(capital)} viram **{formatar_brl(vf_sl_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
 
 ✅ **Sem risco de MaM** — o preço sobe todos os dias, você pode sair a qualquer momento.
 
-⚠️ **Risco de reinvestimento:** se a Selic cair {choque_pp:.2f} p.p., o rendimento cai junto e R$10.000 viram **{formatar_brl(vf_adv)}** — não há proteção de taxa.
+⚠️ **Risco de reinvestimento:** se a Selic cair {choque_pp:.2f} p.p., o rendimento cai junto e {formatar_brl(capital)} viram **{formatar_brl(vf_adv)}** — não há proteção de taxa.
 
 **Use quando:** precisar de liquidez imediata ou não souber exatamente quando vai sacar.
             """)
@@ -271,16 +270,16 @@ Com Selic em **{selic_pct:.1f}%**, R$10.000 viram **{formatar_brl(vf_sl_l)}** em
                 if _reinvest_pre:
                     r_neu_pre = retorno_hold_to_mat_reinvestido(tp, T_pre, H, "pre", ip, sl, com_ir)
                     r_adv_pre = retorno_hold_to_mat_reinvestido(tp, T_pre, H, "pre", ip, max(sl - ck, 0.001), com_ir)
-                    vf_pr_l   = _EX * (1 + r_neu_pre) ** H
-                    vf_adv_p  = _EX * (1 + r_adv_pre) ** H
+                    vf_pr_l   = capital * (1 + r_neu_pre) ** H
+                    vf_adv_p  = capital * (1 + r_adv_pre) ** H
                     delta_str = f"{r_neu_pre*100:.1f}% a.a. combinado"
                 else:
                     r_neu_pre = tp
-                    vf_pr_l   = _EX * (1 + retorno_liquido_ir(tp, H)) ** H if com_ir else _EX * (1 + tp) ** H
+                    vf_pr_l   = capital * (1 + retorno_liquido_ir(tp, H)) ** H if com_ir else capital * (1 + tp) ** H
                     real_pre  = ((1 + tp) / (1 + ip)) ** H - 1
                     r_adv_p   = retorno_saida_antecipada(tp, tp + ck, T_pre, H, "pre")
                     if com_ir: r_adv_p = retorno_liquido_ir(r_adv_p, H)
-                    vf_adv_p  = _EX * (1 + r_adv_p) ** H
+                    vf_adv_p  = capital * (1 + r_adv_p) ** H
                     delta_str = f"Real projetado: {real_pre*100:.1f}% acima do IPCA"
 
                 st.metric(
@@ -298,11 +297,11 @@ Taxa de **{pre_ex['taxa']:.1f}%** travada — título vence em **{T_pre:.1f} ano
 - Fase 1 ({T_pre:.1f}a): Prefixado a {pre_ex['taxa']:.1f}% a.a.
 - Fase 2 ({anos_rest_pre:.1f}a): resgate reinvestido a Selic {selic_pct:.1f}%
 
-R$10.000 → **{formatar_brl(vf_pr_l)}** em {horizonte} ano(s){" (líquido IR em cada fase)" if com_ir else ""}.
+{formatar_brl(capital)} → **{formatar_brl(vf_pr_l)}** em {horizonte} ano(s){" (líquido IR em cada fase)" if com_ir else ""}.
 
 ✅ **Sem risco de MaM** — título mantido até o vencimento.
 
-⚠️ Cenário adverso (Selic cai {choque_pp:.2f} p.p. na Fase 2): R$10.000 → **{formatar_brl(vf_adv_p)}**
+⚠️ Cenário adverso (Selic cai {choque_pp:.2f} p.p. na Fase 2): {formatar_brl(capital)} → **{formatar_brl(vf_adv_p)}**
 
 **Use quando:** quiser travar uma taxa alta e tolerar reinvestir o resgate a Selic.
                     """)
@@ -310,11 +309,11 @@ R$10.000 → **{formatar_brl(vf_pr_l)}** em {horizonte} ano(s){" (líquido IR em
                     st.markdown(f"""
 Taxa nominal de **{pre_ex['taxa']:.1f}%** travada na compra — independe do que a Selic fizer depois.
 
-R$10.000 → **{formatar_brl(vf_pr_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
+{formatar_brl(capital)} → **{formatar_brl(vf_pr_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
 
 **Exposição MaM:** {expo_pre:.1f} ano(s) sobrando após sua saída → {_risco_expo("pre", expo_pre)}
 {"✅ Vence dentro do horizonte — sem risco de MaM." if expo_pre == 0 else
-f"⚠️ Se taxas subirem {choque_pp:.2f} p.p., R$10.000 → **{formatar_brl(vf_adv_p)}** ({r_adv_p*100:.1f}% a.a.)"}
+f"⚠️ Se taxas subirem {choque_pp:.2f} p.p., {formatar_brl(capital)} → **{formatar_brl(vf_adv_p)}** ({r_adv_p*100:.1f}% a.a.)"}
 
 **Use quando:** quiser travar uma taxa alta acreditando que a Selic vai cair.
                     """)
@@ -334,16 +333,16 @@ f"⚠️ Se taxas subirem {choque_pp:.2f} p.p., R$10.000 → **{formatar_brl(vf_
                 if _reinvest_ip:
                     r_neu_ip  = retorno_hold_to_mat_reinvestido(tr, T_ip, H, "ipca_mais", ip, sl, com_ir)
                     r_adv_ip  = retorno_hold_to_mat_reinvestido(tr, T_ip, H, "ipca_mais", ip, max(sl - ck, 0.001), com_ir)
-                    vf_ip_l   = _EX * (1 + r_neu_ip) ** H
-                    vf_adv_ip = _EX * (1 + r_adv_ip) ** H
+                    vf_ip_l   = capital * (1 + r_neu_ip) ** H
+                    vf_adv_ip = capital * (1 + r_adv_ip) ** H
                     delta_str_ip = f"{r_neu_ip*100:.1f}% a.a. combinado"
                 else:
                     nom_ip    = (1 + tr) * (1 + ip) - 1
-                    vf_ip     = _EX * (1 + nom_ip) ** H
-                    vf_ip_l   = _EX * (1 + retorno_liquido_ir(nom_ip, H)) ** H if com_ir else vf_ip
+                    vf_ip     = capital * (1 + nom_ip) ** H
+                    vf_ip_l   = capital * (1 + retorno_liquido_ir(nom_ip, H)) ** H if com_ir else vf_ip
                     r_adv_ip  = retorno_saida_antecipada(tr, tr + ck, T_ip, H, "ipca_mais", ip)
                     if com_ir: r_adv_ip = retorno_liquido_ir(r_adv_ip, H)
-                    vf_adv_ip = _EX * (1 + r_adv_ip) ** H
+                    vf_adv_ip = capital * (1 + r_adv_ip) ** H
                     delta_str_ip = f"Nominal: ~{nom_ip*100:.1f}% com IPCA {ipca_pct:.1f}%"
 
                 st.metric(
@@ -361,11 +360,11 @@ f"⚠️ Se taxas subirem {choque_pp:.2f} p.p., R$10.000 → **{formatar_brl(vf_
 - Fase 1 ({T_ip:.1f}a): IPCA + {ipca_ex['taxa']:.2f}% a.a.
 - Fase 2 ({anos_rest_ip:.1f}a): resgate reinvestido a Selic {selic_pct:.1f}%
 
-R$10.000 → **{formatar_brl(vf_ip_l)}** em {horizonte} ano(s){" (líquido IR em cada fase)" if com_ir else ""}.
+{formatar_brl(capital)} → **{formatar_brl(vf_ip_l)}** em {horizonte} ano(s){" (líquido IR em cada fase)" if com_ir else ""}.
 
 ✅ **Sem risco de MaM** — título mantido até o vencimento.
 
-⚠️ Cenário adverso (Selic cai {choque_pp:.2f} p.p. na Fase 2): R$10.000 → **{formatar_brl(vf_adv_ip)}**
+⚠️ Cenário adverso (Selic cai {choque_pp:.2f} p.p. na Fase 2): {formatar_brl(capital)} → **{formatar_brl(vf_adv_ip)}**
 
 **Use quando:** quiser proteger o poder de compra e tolerar reinvestir o resgate a Selic.
                     """)
@@ -373,11 +372,11 @@ R$10.000 → **{formatar_brl(vf_ip_l)}** em {horizonte} ano(s){" (líquido IR em
                     st.markdown(f"""
 **{ipca_ex['taxa']:.2f}% real** acima da inflação — garantido no contrato, qualquer que seja o IPCA.
 
-R$10.000 → **{formatar_brl(vf_ip_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
+{formatar_brl(capital)} → **{formatar_brl(vf_ip_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
 
 **Exposição MaM:** {expo_ip:.1f} ano(s) sobrando após sua saída → {_risco_expo("ipca_mais", expo_ip)}
 {"✅ Vence dentro do horizonte — sem risco de MaM." if expo_ip == 0 else
-f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., R$10.000 → **{formatar_brl(vf_adv_ip)}** ({r_adv_ip*100:.1f}% a.a.)"}
+f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **{formatar_brl(vf_adv_ip)}** ({r_adv_ip*100:.1f}% a.a.)"}
 
 **Use quando:** quiser proteger o poder de compra no longo prazo ou se temer inflação alta.
                     """)
