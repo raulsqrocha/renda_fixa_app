@@ -460,13 +460,16 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
                 f"Fav: **{a['ret_fav']:.1f}%** · "
                 f"Real: **{a['ret_real']:.1f}%**"
             )
-            vf_adv = capital * (1 + a['ret_adv'] / 100) ** H
             vf_neu = capital * (1 + a['ret_neu'] / 100) ** H
-            vf_fav = capital * (1 + a['ret_fav'] / 100) ** H
-            st.caption(
-                f"Adv: {formatar_brl(vf_adv)} · "
-                f"Neutro: {formatar_brl(vf_neu)} · "
-                f"Fav: {formatar_brl(vf_fav)}"
+            st.markdown(
+                f"<div style='margin-top:0.4rem; padding:0.45rem 0.6rem; "
+                f"background:#0e1c12; border-left:3px solid #38A169; border-radius:4px;'>"
+                f"<span style='font-size:0.7rem; color:#718096;'>resgate estimado (neutro)</span><br>"
+                f"<span style='font-size:0.72rem; color:#a0aec0;'>{formatar_brl(capital)}</span>"
+                f"<span style='font-size:0.8rem; color:#718096;'> → </span>"
+                f"<span style='font-size:0.95rem; font-weight:700; color:#68D391;'>{formatar_brl(vf_neu)}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
             )
 
     if len(analises) > 6:
