@@ -15,6 +15,8 @@ from core.financas import (
     aliquota_ir_renda_fixa,
     retorno_liquido_ir,
     retorno_saida_antecipada,
+    retorno_hold_to_mat_reinvestido,
+    carteira_mista,
 )
 from core.graficos import grafico_markowitz, grafico_cenarios_batalha
 
@@ -67,7 +69,16 @@ def _insight_texto(w: dict, horizonte: int, ipca: float, com_ir: bool) -> str:
             f"momento sem surpresas de preço. Retorno esperado: **{ret:.1f}% a.a.** "
             f"Atenção: se a Selic cair, o rendimento cai junto — a taxa não é travada."
         )
+    reinvest = w.get("reinvest", False)
+
     if tipo == "pre":
+        if reinvest:
+            return (
+                f"**{nome}** vence antes do seu horizonte{ir_obs}. "
+                f"Retorno combinado de **{ret:.1f}% a.a.**: Fase 1 no Prefixado até o vencimento "
+                f"+ Fase 2 reinvestindo a Selic. Cenário adverso (Selic cai): "
+                f"**{w['ret_adv']:.1f}% a.a.** — ainda sem risco de MaM."
+            )
         if expo == 0:
             return (
                 f"**{nome}** vence dentro do seu horizonte{ir_obs} — você recebe os "
@@ -80,6 +91,13 @@ def _insight_texto(w: dict, horizonte: int, ipca: float, com_ir: bool) -> str:
             f"**{expo:.1f} anos antes do vencimento**. No cenário adverso "
             f"(taxas +1 p.p.), o retorno cai para **{w['ret_adv']:.1f}%** — avalie "
             f"se essa amplitude de risco é aceitável para o seu perfil."
+        )
+    if reinvest:
+        return (
+            f"**{nome}** vence antes do seu horizonte{ir_obs}. "
+            f"Retorno combinado de **{ret:.1f}% a.a.**: Fase 1 no IPCA+ com proteção "
+            f"real de {w['ret_real']:.1f}% a.a. + Fase 2 reinvestindo a Selic. "
+            f"Cenário adverso (Selic cai): **{w['ret_adv']:.1f}% a.a.**"
         )
     if expo == 0:
         return (
@@ -206,22 +224,52 @@ Com Selic em **{selic_pct:.1f}%**, R$10.000 viram **{formatar_brl(vf_sl_l)}** em
         with col_d2:
             st.markdown("#### 📌 Tesouro Prefixado — Pré-Fixado")
             if pre_ex:
-                tp    = pre_ex["taxa"] / 100
-                T_pre = pre_ex["anos_total"]
+                tp       = pre_ex["taxa"] / 100
+                T_pre    = pre_ex["anos_total"]
                 expo_pre = max(0.0, T_pre - H)
-                vf_pr    = _EX * (1 + tp) ** H
-                vf_pr_l  = _EX * (1 + retorno_liquido_ir(tp, H)) ** H if com_ir else vf_pr
-                real_pre = ((1 + tp) / (1 + ip)) ** H - 1
-                r_adv_p  = retorno_saida_antecipada(tp, tp + choque_pp/100, T_pre, H, "pre")
-                if com_ir: r_adv_p = retorno_liquido_ir(r_adv_p, H)
-                vf_adv_p = _EX * (1 + r_adv_p) ** H
+                ck       = choque_pp / 100
+                _reinvest_pre = H > T_pre and sl > 0
+
+                if _reinvest_pre:
+                    r_neu_pre = retorno_hold_to_mat_reinvestido(tp, T_pre, H, "pre", ip, sl, com_ir)
+                    r_adv_pre = retorno_hold_to_mat_reinvestido(tp, T_pre, H, "pre", ip, max(sl - ck, 0.001), com_ir)
+                    vf_pr_l   = _EX * (1 + r_neu_pre) ** H
+                    vf_adv_p  = _EX * (1 + r_adv_pre) ** H
+                    delta_str = f"{r_neu_pre*100:.1f}% a.a. combinado"
+                else:
+                    r_neu_pre = tp
+                    vf_pr_l   = _EX * (1 + retorno_liquido_ir(tp, H)) ** H if com_ir else _EX * (1 + tp) ** H
+                    real_pre  = ((1 + tp) / (1 + ip)) ** H - 1
+                    r_adv_p   = retorno_saida_antecipada(tp, tp + ck, T_pre, H, "pre")
+                    if com_ir: r_adv_p = retorno_liquido_ir(r_adv_p, H)
+                    vf_adv_p  = _EX * (1 + r_adv_p) ** H
+                    delta_str = f"Real projetado: {real_pre*100:.1f}% acima do IPCA"
 
                 st.metric(
                     f"Taxa travada — {pre_ex['nome'].replace('Tesouro ', '')}",
                     f"{pre_ex['taxa']:.2f}% a.a.",
-                    f"Real projetado: {real_pre*100:.1f}% acima do IPCA",
+                    delta_str,
                 )
-                st.markdown(f"""
+
+                if _reinvest_pre:
+                    anos_rest_pre = H - T_pre
+                    st.markdown(f"""
+Taxa de **{pre_ex['taxa']:.1f}%** travada — título vence em **{T_pre:.1f} ano(s)**.
+
+**Retorno combinado em 2 fases:**
+- Fase 1 ({T_pre:.1f}a): Prefixado a {pre_ex['taxa']:.1f}% a.a.
+- Fase 2 ({anos_rest_pre:.1f}a): resgate reinvestido a Selic {selic_pct:.1f}%
+
+R$10.000 → **{formatar_brl(vf_pr_l)}** em {horizonte} ano(s){" (líquido IR em cada fase)" if com_ir else ""}.
+
+✅ **Sem risco de MaM** — título mantido até o vencimento.
+
+⚠️ Cenário adverso (Selic cai {choque_pp:.2f} p.p. na Fase 2): R$10.000 → **{formatar_brl(vf_adv_p)}**
+
+**Use quando:** quiser travar uma taxa alta e tolerar reinvestir o resgate a Selic.
+                    """)
+                else:
+                    st.markdown(f"""
 Taxa nominal de **{pre_ex['taxa']:.1f}%** travada na compra — independe do que a Selic fizer depois.
 
 R$10.000 → **{formatar_brl(vf_pr_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
@@ -231,7 +279,7 @@ R$10.000 → **{formatar_brl(vf_pr_l)}** em {horizonte} ano(s){" (líquido IR)" 
 f"⚠️ Se taxas subirem {choque_pp:.2f} p.p., R$10.000 → **{formatar_brl(vf_adv_p)}** ({r_adv_p*100:.1f}% a.a.)"}
 
 **Use quando:** quiser travar uma taxa alta acreditando que a Selic vai cair.
-                """)
+                    """)
             else:
                 st.info("Nenhum Prefixado disponível no catálogo.")
 
@@ -239,23 +287,52 @@ f"⚠️ Se taxas subirem {choque_pp:.2f} p.p., R$10.000 → **{formatar_brl(vf_
         with col_d3:
             st.markdown("#### 🛡️ Tesouro IPCA+ — Híbrido")
             if ipca_ex:
-                tr    = ipca_ex["taxa"] / 100
-                T_ip  = ipca_ex["anos_total"]
+                tr       = ipca_ex["taxa"] / 100
+                T_ip     = ipca_ex["anos_total"]
                 expo_ip  = max(0.0, T_ip - H)
-                nom_ip   = (1 + tr) * (1 + ip) - 1
-                vf_ip    = _EX * (1 + nom_ip) ** H
-                vf_ip_l  = _EX * (1 + retorno_liquido_ir(nom_ip, H)) ** H if com_ir else vf_ip
-                real_ip  = tr
-                r_adv_ip = retorno_saida_antecipada(tr, tr + choque_pp/100, T_ip, H, "ipca_mais", ip)
-                if com_ir: r_adv_ip = retorno_liquido_ir(r_adv_ip, H)
-                vf_adv_ip = _EX * (1 + r_adv_ip) ** H
+                ck       = choque_pp / 100
+                _reinvest_ip = H > T_ip and sl > 0
+
+                if _reinvest_ip:
+                    r_neu_ip  = retorno_hold_to_mat_reinvestido(tr, T_ip, H, "ipca_mais", ip, sl, com_ir)
+                    r_adv_ip  = retorno_hold_to_mat_reinvestido(tr, T_ip, H, "ipca_mais", ip, max(sl - ck, 0.001), com_ir)
+                    vf_ip_l   = _EX * (1 + r_neu_ip) ** H
+                    vf_adv_ip = _EX * (1 + r_adv_ip) ** H
+                    delta_str_ip = f"{r_neu_ip*100:.1f}% a.a. combinado"
+                else:
+                    nom_ip    = (1 + tr) * (1 + ip) - 1
+                    vf_ip     = _EX * (1 + nom_ip) ** H
+                    vf_ip_l   = _EX * (1 + retorno_liquido_ir(nom_ip, H)) ** H if com_ir else vf_ip
+                    r_adv_ip  = retorno_saida_antecipada(tr, tr + ck, T_ip, H, "ipca_mais", ip)
+                    if com_ir: r_adv_ip = retorno_liquido_ir(r_adv_ip, H)
+                    vf_adv_ip = _EX * (1 + r_adv_ip) ** H
+                    delta_str_ip = f"Nominal: ~{nom_ip*100:.1f}% com IPCA {ipca_pct:.1f}%"
 
                 st.metric(
                     f"Taxa real travada — {ipca_ex['nome'].replace('Tesouro ', '')}",
                     f"IPCA + {ipca_ex['taxa']:.2f}% a.a.",
-                    f"Nominal: ~{nom_ip*100:.1f}% com IPCA {ipca_pct:.1f}%",
+                    delta_str_ip,
                 )
-                st.markdown(f"""
+
+                if _reinvest_ip:
+                    anos_rest_ip = H - T_ip
+                    st.markdown(f"""
+**{ipca_ex['taxa']:.2f}% real** acima da inflação — vence em **{T_ip:.1f} ano(s)**.
+
+**Retorno combinado em 2 fases:**
+- Fase 1 ({T_ip:.1f}a): IPCA + {ipca_ex['taxa']:.2f}% a.a.
+- Fase 2 ({anos_rest_ip:.1f}a): resgate reinvestido a Selic {selic_pct:.1f}%
+
+R$10.000 → **{formatar_brl(vf_ip_l)}** em {horizonte} ano(s){" (líquido IR em cada fase)" if com_ir else ""}.
+
+✅ **Sem risco de MaM** — título mantido até o vencimento.
+
+⚠️ Cenário adverso (Selic cai {choque_pp:.2f} p.p. na Fase 2): R$10.000 → **{formatar_brl(vf_adv_ip)}**
+
+**Use quando:** quiser proteger o poder de compra e tolerar reinvestir o resgate a Selic.
+                    """)
+                else:
+                    st.markdown(f"""
 **{ipca_ex['taxa']:.2f}% real** acima da inflação — garantido no contrato, qualquer que seja o IPCA.
 
 R$10.000 → **{formatar_brl(vf_ip_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
@@ -265,7 +342,7 @@ R$10.000 → **{formatar_brl(vf_ip_l)}** em {horizonte} ano(s){" (líquido IR)" 
 f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., R$10.000 → **{formatar_brl(vf_adv_ip)}** ({r_adv_ip*100:.1f}% a.a.)"}
 
 **Use quando:** quiser proteger o poder de compra no longo prazo ou se temer inflação alta.
-                """)
+                    """)
             else:
                 st.info("Nenhum IPCA+ disponível no catálogo.")
 
@@ -307,12 +384,21 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., R$10.000 → **{formatar_brl(v
             ipca       = ipca_pct,
             choque     = choque_pp,
             com_ir     = com_ir,
+            selic      = selic_pct,
         )
         for t in titulos_sel
     ]
 
     vencedor  = _winner(analises)
     aliq_str  = f"{aliquota_ir_renda_fixa(H)*100:.1f}%" if com_ir else "bruto"
+
+    # Carteira Mista: 70% vencedor + 30% melhor Selic disponível na seleção
+    selic_analise = next((a for a in analises if a["tipo"] == "selic"), None)
+    mix = (
+        carteira_mista(vencedor, selic_analise, peso_principal=0.70)
+        if selic_analise and vencedor["tipo"] != "selic"
+        else None
+    )
 
     # -----------------------------------------------------------------------
     # Semáforo de Risco
@@ -348,7 +434,7 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., R$10.000 → **{formatar_brl(v
     # -----------------------------------------------------------------------
     col_g1, col_g2 = st.columns(2)
     with col_g1:
-        st.plotly_chart(grafico_markowitz(analises), use_container_width=True)
+        st.plotly_chart(grafico_markowitz(analises, carteira_mix=mix), use_container_width=True)
     with col_g2:
         st.plotly_chart(grafico_cenarios_batalha(analises), use_container_width=True)
 
@@ -362,6 +448,50 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., R$10.000 → **{formatar_brl(v
         f'<div class="badge-seguranca">💡 {_insight_texto(vencedor, horizonte, ipca_pct, com_ir)}</div>',
         unsafe_allow_html=True,
     )
+
+    # -----------------------------------------------------------------------
+    # Carteira Mista Otimizada (3.2)
+    # -----------------------------------------------------------------------
+    if mix:
+        st.markdown("#### ⭐  Carteira Mista Otimizada — Asset Allocation de Renda Fixa")
+
+        nome_p = mix["nome_principal"].replace("Tesouro ", "")
+        nome_l = mix["nome_liquida"].replace("Tesouro ", "")
+        wp_pct = int(mix["peso_principal"] * 100)
+        wl_pct = int(mix["peso_liquida"]  * 100)
+
+        col_mix1, col_mix2, col_mix3, col_mix4 = st.columns(4)
+        with col_mix1:
+            st.metric("Alocação Principal", f"{wp_pct}%  {nome_p}",
+                      f"Retorno neutro: {vencedor['ret_neu']:.2f}% a.a.")
+        with col_mix2:
+            st.metric("Alocação Liquidez", f"{wl_pct}%  {nome_l}",
+                      f"Retorno neutro: {selic_analise['ret_neu']:.2f}% a.a.")
+        with col_mix3:
+            st.metric("Retorno Mix (neutro)", f"{mix['ret_neu']:.2f}% a.a.",
+                      f"Adv: {mix['ret_adv']:.1f}% · Fav: {mix['ret_fav']:.1f}%")
+        with col_mix4:
+            reducao_risco = vencedor["risco_std"] - mix["risco_std"]
+            st.metric("Redução de Risco (σ)", f"{mix['risco_std']:.3f}%",
+                      f"−{reducao_risco:.3f}% vs. 100% {nome_p}")
+
+        st.markdown(
+            f'<div class="badge-seguranca">'
+            f'⭐ <strong>Carteira Mista sugerida:</strong> '
+            f'<strong>{wp_pct}% {nome_p}</strong> (oportunidade/retorno) + '
+            f'<strong>{wl_pct}% {nome_l}</strong> (liquidez/reserva). '
+            f'O ponto ⭐ no gráfico de Markowitz acima demonstra que essa combinação '
+            f'reduz a dispersão de cenários em <strong>{reducao_risco:.3f} p.p.</strong> '
+            f'mantendo retorno competitivo de <strong>{mix["ret_neu"]:.2f}% a.a.</strong>. '
+            f'Inclua um Tesouro Selic na seleção para ativar essa análise.'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    elif vencedor["tipo"] != "selic":
+        st.caption(
+            "💡 Adicione um **Tesouro Selic** na seleção acima para ver a "
+            "sugestão de Carteira Mista Otimizada (70/30)."
+        )
 
     st.divider()
 

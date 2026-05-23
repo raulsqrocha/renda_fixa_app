@@ -10,6 +10,7 @@ Paleta de cores:
 import numpy as np
 import plotly.graph_objects as go
 import pandas as pd
+from datetime import date
 
 from core.financas import formatar_brl
 
@@ -18,6 +19,7 @@ VERMELHO      = "#E53E3E"
 VERDE         = "#38A169"
 AZUL          = "#4299E1"
 LARANJA       = "#DD6B20"
+AMARELO       = "#ECC94B"
 FUNDO         = "#0E1117"
 FUNDO_SECUND  = "#1C2331"
 GRID          = "#2D3748"
@@ -115,6 +117,31 @@ def grafico_paradoxo(df: pd.DataFrame) -> go.Figure:
         borderwidth=1,
         borderpad=4,
     )
+
+    # Linha vertical "Dia de Hoje" — só renderiza se hoje estiver dentro do intervalo do gráfico
+    hoje_ts = pd.Timestamp(date.today())
+    if df["data"].min() <= hoje_ts <= df["data"].max():
+        fig.add_shape(
+            type="line",
+            xref="x", yref="paper",
+            x0=hoje_ts, x1=hoje_ts,
+            y0=0, y1=1,
+            line=dict(color=AMARELO, width=1.5, dash="dash"),
+        )
+        fig.add_annotation(
+            x=hoje_ts,
+            y=0.97,
+            yref="paper",
+            text="📍 Hoje",
+            showarrow=False,
+            font=dict(color=AMARELO, size=11, family="Inter"),
+            bgcolor="rgba(236,201,75,0.10)",
+            bordercolor=AMARELO,
+            borderwidth=1,
+            borderpad=4,
+            xanchor="left",
+            yanchor="top",
+        )
 
     fig.update_layout(**_layout_base("O Paradoxo da Renda Fixa"))
     fig.update_layout(yaxis_title="Valor da Carteira (R$)", xaxis_title="")
@@ -306,7 +333,7 @@ _TIPO_COR = {"selic": AZUL, "pre": LARANJA, "ipca_mais": VERDE}
 _TIPO_NOME = {"selic": "Pós-Fixado (Selic)", "pre": "Pré-Fixado", "ipca_mais": "IPCA+"}
 
 
-def grafico_markowitz(analises: list) -> go.Figure:
+def grafico_markowitz(analises: list, carteira_mix: dict | None = None) -> go.Figure:
     """
     Fronteira de Markowitz educacional: Retorno Esperado vs. Risco de MaM.
 
@@ -370,6 +397,32 @@ def grafico_markowitz(analises: list) -> go.Figure:
                 f"Retorno esperado: %{{y:.2f}}% a.a.<br>"
                 f"Risco (dispersão): %{{x:.2f}}%<br>"
                 f"MaM: {a['risco_label']}<extra></extra>"
+            ),
+        ))
+
+    # Ponto estrela ⭐ — Carteira Mista Otimizada (70/30)
+    if carteira_mix:
+        nome_p = carteira_mix["nome_principal"].replace("Tesouro ", "")
+        nome_l = carteira_mix["nome_liquida"].replace("Tesouro ", "")
+        wp_pct = int(carteira_mix["peso_principal"] * 100)
+        wl_pct = int(carteira_mix["peso_liquida"]  * 100)
+
+        fig.add_trace(go.Scatter(
+            x=[carteira_mix["risco_std"]],
+            y=[carteira_mix["ret_neu"]],
+            mode="markers+text",
+            marker=dict(size=20, color=AMARELO, symbol="star",
+                        line=dict(color="white", width=1.5)),
+            text=["⭐ Mix"],
+            textposition="top center",
+            textfont=dict(size=10, color=AMARELO),
+            name=f"Carteira Mista {wp_pct}/{wl_pct}",
+            hovertemplate=(
+                f"<b>Carteira Mista {wp_pct}/{wl_pct}</b><br>"
+                f"{wp_pct}% {nome_p} + {wl_pct}% {nome_l}<br>"
+                f"Retorno neutro: %{{y:.2f}}% a.a.<br>"
+                f"Risco (σ): %{{x:.3f}}%"
+                f"<extra></extra>"
             ),
         ))
 

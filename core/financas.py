@@ -351,6 +351,29 @@ def aliquota_ir_renda_fixa(horizonte_anos: float) -> float:
     return 0.150
 
 
+# Tabela oficial do IOF regressivo sobre rendimentos de renda fixa (Decreto 6.306/2007)
+# Índice 0 = dia 1, índice 28 = dia 29; dia 30+ → 0%
+_IOF_TABELA = [
+    96, 93, 90, 86, 83, 80, 76, 73, 70, 66,   # dias 1–10
+    63, 60, 56, 53, 50, 46, 43, 40, 36, 33,   # dias 11–20
+    30, 26, 23, 20, 16, 13, 10,  6,  3,  0,   # dias 21–30
+]
+
+
+def aliquota_iof_renda_fixa(dias: int) -> float:
+    """
+    Alíquota de IOF regressivo sobre o rendimento de aplicações de renda fixa.
+
+    Incide sobre o rendimento (não sobre o principal).
+    Dia 1: 96% → Dia 29: 3% → Dia 30+: 0%
+    """
+    if dias <= 0:
+        return 1.0
+    if dias >= 30:
+        return 0.0
+    return _IOF_TABELA[dias - 1] / 100.0
+
+
 def retorno_liquido_ir(retorno_bruto_anual: float, horizonte_anos: float) -> float:
     """
     Converte retorno bruto anualizado em retorno líquido após IR regressivo.
@@ -366,6 +389,50 @@ def retorno_liquido_ir(retorno_bruto_anual: float, horizonte_anos: float) -> flo
     return (1 + lucro_liq) ** (1 / horizonte_anos) - 1
 
 
+def retorno_hold_to_mat_reinvestido(
+    taxa_compra: float,
+    anos_total: float,
+    anos_saida: float,
+    tipo: str,
+    ipca: float,
+    selic: float,
+    com_ir: bool,
+) -> float:
+    """
+    Retorno anualizado combinado quando o título vence ANTES do horizonte do cliente.
+
+    Fase 1 (T anos): carrego até o vencimento — IR pela tabela regressiva com prazo T.
+    Fase 2 (H−T anos): resgate líquido reinvestido a 100% da Selic projetada — IR pelo prazo H−T.
+
+    Parâmetros em decimal (ex: 0.135 = 13,5%).
+    """
+    T = anos_total
+    H = anos_saida
+
+    # Fase 1: fator bruto no vencimento do título
+    if tipo == "pre":
+        fator_bruto_T = (1 + taxa_compra) ** T
+    else:  # ipca_mais
+        fator_bruto_T = ((1 + ipca) * (1 + taxa_compra)) ** T
+
+    lucro_T = fator_bruto_T - 1
+    if com_ir and lucro_T > 0:
+        fator_liq_T = 1.0 + lucro_T * (1.0 - aliquota_ir_renda_fixa(T))
+    else:
+        fator_liq_T = fator_bruto_T
+
+    # Fase 2: reinvestimento a Selic pelos anos restantes
+    anos_rest = H - T
+    fator_bruto_2 = (1 + selic) ** anos_rest
+    lucro_2 = fator_bruto_2 - 1
+    if com_ir and lucro_2 > 0:
+        fator_liq_2 = 1.0 + lucro_2 * (1.0 - aliquota_ir_renda_fixa(anos_rest))
+    else:
+        fator_liq_2 = fator_bruto_2
+
+    return (fator_liq_T * fator_liq_2) ** (1.0 / H) - 1.0
+
+
 def analise_batalha(
     nome: str,
     tipo: str,
@@ -375,6 +442,7 @@ def analise_batalha(
     ipca: float,
     choque: float = 0.01,
     com_ir: bool = False,
+    selic: float = 0.0,
 ) -> dict:
     """
     Calcula retorno e risco para um título nos três cenários de taxa.
@@ -390,20 +458,36 @@ def analise_batalha(
     t  = taxa  / 100
     ip = ipca  / 100
     ck = choque / 100
+    sl = selic  / 100
+
+    # Reinvestimento: título vence ANTES do horizonte do cliente.
+    # IR aplicado dentro de retorno_hold_to_mat_reinvestido com prazo correto por fase.
+    _reinvest = anos_saida > anos_total and sl > 0 and tipo != "selic"
 
     if tipo == "selic":
-        r_adv = retorno_saida_antecipada(t - ck, t - ck, anos_total, anos_saida, "selic")
+        # Pós-fixado: sem MaM, retorno acompanha Selic — adverso = Selic cai
+        r_adv = retorno_saida_antecipada(max(t - ck, 0.001), max(t - ck, 0.001), anos_total, anos_saida, "selic")
         r_neu = retorno_saida_antecipada(t,      t,      anos_total, anos_saida, "selic")
         r_fav = retorno_saida_antecipada(t + ck, t + ck, anos_total, anos_saida, "selic")
+        if com_ir:
+            r_adv = retorno_liquido_ir(r_adv, anos_saida)
+            r_neu = retorno_liquido_ir(r_neu, anos_saida)
+            r_fav = retorno_liquido_ir(r_fav, anos_saida)
+    elif _reinvest:
+        # Título vence antes do horizonte: Fase 1 = carrego até T; Fase 2 = Selic por H−T.
+        # Adverso/Favorável refletem variação da Selic na fase de reinvestimento.
+        r_adv = retorno_hold_to_mat_reinvestido(t, anos_total, anos_saida, tipo, ip, max(sl - ck, 0.001), com_ir)
+        r_neu = retorno_hold_to_mat_reinvestido(t, anos_total, anos_saida, tipo, ip, sl,           com_ir)
+        r_fav = retorno_hold_to_mat_reinvestido(t, anos_total, anos_saida, tipo, ip, sl + ck,      com_ir)
     else:
+        # Saída antecipada (H < T) ou H == T: MaM determina o retorno
         r_adv = retorno_saida_antecipada(t, t + ck, anos_total, anos_saida, tipo, ip)
         r_neu = retorno_saida_antecipada(t, t,      anos_total, anos_saida, tipo, ip)
         r_fav = retorno_saida_antecipada(t, t - ck, anos_total, anos_saida, tipo, ip)
-
-    if com_ir:
-        r_adv = retorno_liquido_ir(r_adv, anos_saida)
-        r_neu = retorno_liquido_ir(r_neu, anos_saida)
-        r_fav = retorno_liquido_ir(r_fav, anos_saida)
+        if com_ir:
+            r_adv = retorno_liquido_ir(r_adv, anos_saida)
+            r_neu = retorno_liquido_ir(r_neu, anos_saida)
+            r_fav = retorno_liquido_ir(r_fav, anos_saida)
 
     risco_std = float(np.std([r_adv, r_neu, r_fav]))
 
@@ -430,6 +514,39 @@ def analise_batalha(
         "risco_label": risco_label,
         "anos_expo":   anos_expo,
         "hold_to_mat": anos_saida >= anos_total,
+        "reinvest":    _reinvest,
+    }
+
+
+def carteira_mista(
+    analise_principal: dict,
+    analise_liquida: dict,
+    peso_principal: float = 0.70,
+) -> dict:
+    """
+    Métricas de uma carteira com dois ativos nos três cenários de taxa.
+
+    Retorno combinado = média ponderada dos retornos de cada cenário.
+    Risco = desvio-padrão dos três retornos ponderados.
+    (Modelo co-movimento: mesmos choques macroeconômicos nos dois ativos.)
+    """
+    wl = 1.0 - peso_principal
+
+    r_adv = peso_principal * analise_principal["ret_adv"] + wl * analise_liquida["ret_adv"]
+    r_neu = peso_principal * analise_principal["ret_neu"] + wl * analise_liquida["ret_neu"]
+    r_fav = peso_principal * analise_principal["ret_fav"] + wl * analise_liquida["ret_fav"]
+    risco = float(np.std([r_adv, r_neu, r_fav]))
+
+    return {
+        "ret_adv":        r_adv,
+        "ret_neu":        r_neu,
+        "ret_fav":        r_fav,
+        "risco_std":      risco,
+        "peso_principal": peso_principal,
+        "peso_liquida":   wl,
+        "nome_principal": analise_principal["nome"],
+        "nome_liquida":   analise_liquida["nome"],
+        "tipo_principal": analise_principal["tipo"],
     }
 
 

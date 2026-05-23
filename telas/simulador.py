@@ -77,30 +77,24 @@ def render():
     # -----------------------------------------------------------------------
     st.subheader("🎯  Selecione o Título")
 
-    col_t1, col_t2, col_t3, col_t4 = st.columns([1.5, 1.5, 1, 1])
+    # Linha 1 — Seleção do título (inputs categóricos)
+    col_cat, col_venc = st.columns([1, 2])
 
-    with col_t1:
+    with col_cat:
         categoria_sel = st.selectbox(
             "Categoria",
             options=list(CATEGORIAS_TITULOS.keys()),
             help="Selecione a família do título Tesouro",
         )
 
-    with col_t2:
+    with col_venc:
         titulo = st.selectbox(
             "Vencimento",
             options=CATEGORIAS_TITULOS[categoria_sel],
             help="Selecione o ano de vencimento",
         )
 
-    with col_t3:
-        valor_sim = st.number_input(
-            "Capital a Simular (R$)",
-            min_value=100.0, max_value=500_000.0,
-            value=10_000.0, step=500.0, format="%.2f",
-        )
-
-    # Resolve dados do título
+    # Resolve dados do título antes da Row 2 para exibir métricas no mesmo grid
     linha = df_titulos[df_titulos["nome"] == titulo] if not df_titulos.empty else pd.DataFrame()
 
     if not linha.empty:
@@ -113,9 +107,21 @@ def render():
 
     anos_restantes = max(1, round((data_vencimento - date.today()).days / 365))
 
-    with col_t4:
+    # Linha 2 — Capital e métricas do título selecionado
+    col_val, col_taxa_m, col_prazo = st.columns([1.8, 1, 1])
+
+    with col_val:
+        valor_sim = st.number_input(
+            "Capital a Simular (R$)",
+            min_value=100.0, max_value=500_000.0,
+            value=10_000.0, step=500.0, format="%.2f",
+        )
+
+    with col_taxa_m:
         st.metric("Taxa Real de Mercado", f"{taxa_atual_pct:.2f}% a.a.")
-        st.metric("Prazo até Vencimento",  f"{anos_restantes} anos")
+
+    with col_prazo:
+        st.metric("Prazo até Vencimento", f"{anos_restantes} anos")
 
     st.divider()
 
@@ -281,32 +287,35 @@ que a taxa real mudou.
             with cols_meta[i]:
                 st.metric(nome_curto, f"{meta['taxa']:.2f}% a.a.", delta_str)
 
-        st.markdown("**Configure os cenários — edite o contexto macroeconômico e a taxa de saída:**")
+        with st.expander("🛠️  Configurar cenários macroeconômicos", expanded=True):
+            st.caption(
+                "Edite o IPCA projetado (contexto) e a taxa real de saída para cada cenário. "
+                "Recolha este painel após configurar — os resultados abaixo atualizam automaticamente."
+            )
+            df_edit = st.data_editor(
+                _CENARIOS_PADRAO.copy(),
+                use_container_width=True,
+                num_rows="fixed",
+                hide_index=True,
+                disabled=["Cenário"],
+                column_config={
+                    "Cenário": st.column_config.TextColumn("Cenário", width="medium"),
+                    "IPCA Futuro (%)": st.column_config.NumberColumn(
+                        "IPCA Futuro (contexto)",
+                        min_value=0.0, max_value=30.0, step=0.5, format="%.1f",
+                        help="Inflação projetada — contexto macroeconômico que explica a variação da taxa real. "
+                             "Não entra diretamente no cálculo (VNA cancela na fórmula).",
+                    ),
+                    "Taxa IPCA+ (%)": st.column_config.NumberColumn(
+                        "Taxa Real na Saída (% a.a.)",
+                        min_value=0.0, max_value=30.0, step=0.5, format="%.1f",
+                        help="Yield real IPCA+ de mercado projetado no momento da venda. "
+                             "Esta é a variável que determina o ganho ou perda de MaM.",
+                    ),
+                },
+            )
 
-        df_edit = st.data_editor(
-            _CENARIOS_PADRAO.copy(),
-            use_container_width=True,
-            num_rows="fixed",
-            hide_index=True,
-            disabled=["Cenário"],
-            column_config={
-                "Cenário": st.column_config.TextColumn("Cenário", width="medium"),
-                "IPCA Futuro (%)": st.column_config.NumberColumn(
-                    "IPCA Futuro (contexto)",
-                    min_value=0.0, max_value=30.0, step=0.5, format="%.1f",
-                    help="Inflação projetada — contexto macroeconômico que explica a variação da taxa real. "
-                         "Não entra diretamente no cálculo (VNA cancela na fórmula).",
-                ),
-                "Taxa IPCA+ (%)": st.column_config.NumberColumn(
-                    "Taxa Real na Saída (% a.a.)",
-                    min_value=0.0, max_value=30.0, step=0.5, format="%.1f",
-                    help="Yield real IPCA+ de mercado projetado no momento da venda. "
-                         "Esta é a variável que determina o ganho ou perda de MaM.",
-                ),
-            },
-        )
-
-        # Resultados: uma coluna por ativo selecionado
+        # Resultados sempre visíveis — independem do estado do expander
         resultados: dict = {"Cenário": df_edit["Cenário"].tolist()}
 
         for ativo in ativos_sel:

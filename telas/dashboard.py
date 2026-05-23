@@ -15,6 +15,7 @@ from core.financas import (
     metricas_carteira,
     serie_paradoxo,
     formatar_brl,
+    aliquota_iof_renda_fixa,
 )
 from core.dados import obter_dados_completos, CATEGORIAS_TITULOS, TITULOS_CONFIG
 from core.graficos import grafico_paradoxo
@@ -50,30 +51,34 @@ def render():
     # -----------------------------------------------------------------------
     st.subheader("⚙️  Configure sua posição")
 
-    col_a, col_a2, col_b, col_c, col_d = st.columns([1.5, 1.5, 1, 1, 1])
+    # Linha 1 — Seleção do título (inputs categóricos)
+    col_cat, col_venc = st.columns([1, 2])
 
-    with col_a:
+    with col_cat:
         categoria_sel = st.selectbox(
             "Categoria",
             options=list(CATEGORIAS_TITULOS.keys()),
             help="Selecione a família do título Tesouro",
         )
 
-    with col_a2:
+    with col_venc:
         titulo_sel = st.selectbox(
             "Vencimento",
             options=CATEGORIAS_TITULOS[categoria_sel],
             help="Selecione o ano de vencimento do título",
         )
 
-    with col_b:
+    # Linha 2 — Parâmetros da posição (inputs numéricos)
+    col_val, col_taxa, col_data = st.columns([1.6, 1.2, 1.2])
+
+    with col_val:
         valor_investido = st.number_input(
             "Valor Investido (R$)",
             min_value=30.0, max_value=1_000_000.0,
             value=10_000.0, step=500.0, format="%.2f",
         )
 
-    with col_c:
+    with col_taxa:
         taxa_contratada_pct = st.number_input(
             "Taxa Contratada (% a.a. real)",
             min_value=1.0, max_value=15.0,
@@ -81,7 +86,7 @@ def render():
             help="Taxa real IPCA+ que você travou na data da compra",
         )
 
-    with col_d:
+    with col_data:
         data_compra = st.date_input(
             "Data de Compra",
             value=date.today() - timedelta(days=365 * 2),
@@ -231,6 +236,89 @@ def render():
             a taxa contratada integralmente.
             </small>
         </div>
+        """, unsafe_allow_html=True)
+
+    # -----------------------------------------------------------------------
+    # Trava de IOF Regressivo (3.3)
+    # -----------------------------------------------------------------------
+    dias_investido = (date.today() - data_compra).days
+    if 0 < dias_investido < 30:
+        aliq_iof    = aliquota_iof_renda_fixa(dias_investido)
+        lucro_bruto = max(0.0, resultado["mam"] - valor_investido)
+        iof_estimado = lucro_bruto * aliq_iof
+        dias_faltam  = 30 - dias_investido
+        st.warning(
+            f"**IOF Regressivo Ativo** — aplicação com **{dias_investido} dia(s)**. "
+            f"Alíquota sobre o rendimento: **{aliq_iof*100:.0f}%**. "
+            f"IOF estimado sobre o lucro atual: **{formatar_brl(iof_estimado)}**. "
+            f"O IOF cai a zero daqui a **{dias_faltam} dia(s)**.",
+            icon="🔴",
+        )
+
+    # -----------------------------------------------------------------------
+    # Botão do Pânico — Stress Test de Mercado (3.1)
+    # -----------------------------------------------------------------------
+    with st.expander("🚨  Botão do Pânico — Simular Choque de Juros (Crise Fiscal/Política)", expanded=False):
+        st.caption(
+            "Arraste o slider para simular um choque de mercado e ver o impacto imediato "
+            "no valor de resgate. Observe que o Carrego (vencimento) permanece inalterado."
+        )
+
+        col_ctrl, col_res = st.columns([1, 2])
+
+        with col_ctrl:
+            choque_stress = st.slider(
+                "Choque de Taxa (p.p.)",
+                min_value=0.0, max_value=5.0, value=2.0, step=0.25,
+                format="+%.2f p.p.",
+                help="Simula crise fiscal ou política elevando a taxa de todos os títulos IPCA+ e Prefixados",
+            )
+
+        taxa_stress   = taxa_mercado + choque_stress / 100
+        res_stress    = metricas_carteira(
+            valor_investido      = valor_investido,
+            pu_na_compra         = pu_compra,
+            taxa_real_contratada = taxa_contratada,
+            taxa_real_mercado    = taxa_stress,
+            vna                  = vna,
+            data_hoje            = date.today(),
+            data_vencimento      = data_vencimento,
+            datas_cupom          = cpns_hoje,
+        )
+
+        tombo     = res_stress["mam"] - resultado["mam"]
+        tombo_pct = (tombo / resultado["mam"] * 100) if resultado["mam"] > 0 else 0.0
+
+        col_s1, col_s2, col_s3 = st.columns(3)
+        with col_s1:
+            st.metric(
+                "Taxa com Choque",
+                f"{taxa_stress * 100:.2f}% a.a.",
+                f"+{choque_stress:.2f} p.p. de estresse",
+                delta_color="inverse",
+            )
+        with col_s2:
+            st.metric(
+                "Resgate Estressado",
+                formatar_brl(res_stress["mam"]),
+                f"{formatar_brl(tombo)} vs. resgate atual",
+                delta_color="inverse" if tombo < 0 else "normal",
+            )
+        with col_s3:
+            st.metric(
+                "Tombo Patrimonial",
+                f"{tombo_pct:+.1f}%",
+                f"Carrego: {formatar_brl(valor_vencimento)} (inalterado)",
+                delta_color="off",
+            )
+
+        st.markdown("""
+<div class="alerta-mercado">
+🧠 <strong>Mensagem Comportamental:</strong> Este é o extrato que leva investidores de varejo
+a vender na mínima. O <em>tombo</em> acima é real — mas temporário. Seu capital de carrego
+permanece exatamente o contratado: a taxa real que você travou na compra não muda com o
+choque. <strong>Vender agora cristaliza o prejuízo; aguardar o vencimento o elimina.</strong>
+</div>
         """, unsafe_allow_html=True)
 
     st.divider()
