@@ -20,15 +20,22 @@ def formatar_brl(valor: float, casas: int = 2) -> str:
 # Utilitários de datas
 # ---------------------------------------------------------------------------
 
+# Média de feriados ANBIMA que caem em dias úteis por ano (~10–13 dependendo do ano)
+_FERIADOS_ANBIMA_POR_ANO = 11
+
+
 def calcular_du(data_inicio: date, data_fim: date) -> int:
     """
     Dias úteis entre duas datas usando convenção brasileira 252 d.u./ano.
-    Aproximação sem feriados nacionais — aceitável para fins educacionais.
+    Conta seg–sex via np.busday_count e desconta ~11 feriados ANBIMA/ano (estimativa).
+    Desvio esperado: ±2 DU por ano vs. calendário oficial ANBIMA.
     """
-    return max(0, int(np.busday_count(
+    du_semana = max(0, int(np.busday_count(
         np.datetime64(data_inicio, 'D'),
         np.datetime64(data_fim, 'D'),
     )))
+    anos = (data_fim - data_inicio).days / 365
+    return max(0, du_semana - round(anos * _FERIADOS_ANBIMA_POR_ANO))
 
 
 def datas_cupom_ntnb(data_hoje: date, data_vencimento: date) -> List[date]:

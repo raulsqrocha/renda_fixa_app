@@ -53,11 +53,17 @@ def _layout_base(titulo: str, yaxis_prefix: str = "R$ ") -> dict:
 # Tela 1 — Gráfico do Paradoxo
 # ---------------------------------------------------------------------------
 
-def grafico_paradoxo(df: pd.DataFrame) -> go.Figure:
+def grafico_paradoxo(
+    df: pd.DataFrame,
+    data_compra: date | None = None,
+    data_vencimento: date | None = None,
+    datas_cupom: list | None = None,
+) -> go.Figure:
     """
     Plota o paradoxo da renda fixa:
       - Linha vermelha tracejada → MaM (volatilidade percebida)
       - Linha verde sólida       → Carrego (segurança real até o vencimento)
+    Timeline opcional: data_compra, data_vencimento, próximo cupom.
     """
     fig = go.Figure()
 
@@ -143,8 +149,110 @@ def grafico_paradoxo(df: pd.DataFrame) -> go.Figure:
             yanchor="top",
         )
 
+    # ── Linha "Data de Compra" ──────────────────────────────────────────
+    if data_compra is not None:
+        compra_ts = pd.Timestamp(data_compra)
+        if df["data"].min() <= compra_ts <= df["data"].max():
+            fig.add_shape(
+                type="line", xref="x", yref="paper",
+                x0=compra_ts, x1=compra_ts, y0=0, y1=1,
+                line=dict(color=AZUL, width=1.5, dash="dot"),
+            )
+            fig.add_annotation(
+                x=compra_ts, y=0.12, yref="paper",
+                text="📅 Compra",
+                showarrow=False,
+                font=dict(color=AZUL, size=10, family="Inter"),
+                bgcolor="rgba(66,153,225,0.10)",
+                bordercolor=AZUL, borderwidth=1, borderpad=4,
+                xanchor="left", yanchor="bottom",
+            )
+
+    # ── Próximo cupom ───────────────────────────────────────────────────
+    if datas_cupom:
+        hoje_d   = date.today()
+        proximos = [d for d in datas_cupom if d > hoje_d]
+        if proximos:
+            prox_ts = pd.Timestamp(proximos[0])
+            if df["data"].min() <= prox_ts <= df["data"].max():
+                fig.add_shape(
+                    type="line", xref="x", yref="paper",
+                    x0=prox_ts, x1=prox_ts, y0=0, y1=1,
+                    line=dict(color=LARANJA, width=1, dash="dot"),
+                )
+                fig.add_annotation(
+                    x=prox_ts, y=0.27, yref="paper",
+                    text="💰 Cupom",
+                    showarrow=False,
+                    font=dict(color=LARANJA, size=10, family="Inter"),
+                    bgcolor="rgba(221,107,32,0.10)",
+                    bordercolor=LARANJA, borderwidth=1, borderpad=4,
+                    xanchor="left", yanchor="bottom",
+                )
+
+    # ── Anotação do vencimento ──────────────────────────────────────────
+    if data_vencimento is not None:
+        venc_ts = pd.Timestamp(data_vencimento)
+        if venc_ts <= df["data"].max():
+            fig.add_annotation(
+                x=venc_ts, y=0.97, yref="paper",
+                text="🏁 Vencimento",
+                showarrow=False,
+                font=dict(color=VERDE, size=10, family="Inter"),
+                bgcolor="rgba(56,161,105,0.10)",
+                bordercolor=VERDE, borderwidth=1, borderpad=4,
+                xanchor="right", yanchor="top",
+            )
+
     fig.update_layout(**_layout_base("O Paradoxo da Renda Fixa"))
     fig.update_layout(yaxis_title="Valor da Carteira (R$)", xaxis_title="")
+    return fig
+
+
+def grafico_score(score: float) -> go.Figure:
+    """Gauge compacto do Índice de Serenidade do Investidor (0–100)."""
+    if score >= 70:
+        cor   = VERDE
+        label = "Sereno"
+    elif score >= 40:
+        cor   = AMARELO
+        label = "Atenção"
+    else:
+        cor   = VERMELHO
+        label = "Risco de Pânico"
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=score,
+        number={"suffix": " pts", "font": {"color": cor, "size": 26, "family": "Inter"}},
+        title={
+            "text": f"<b>{label}</b>",
+            "font": {"color": TEXTO, "size": 13, "family": "Inter"},
+        },
+        gauge={
+            "axis": {
+                "range": [0, 100],
+                "tickcolor": TEXTO_FRACO,
+                "tickfont": {"size": 9},
+                "nticks": 5,
+            },
+            "bar": {"color": cor, "thickness": 0.28},
+            "bgcolor": FUNDO_SECUND,
+            "borderwidth": 1,
+            "bordercolor": GRID,
+            "steps": [
+                {"range": [0,  40], "color": "rgba(229,62,62,0.15)"},
+                {"range": [40, 70], "color": "rgba(236,201,75,0.10)"},
+                {"range": [70,100], "color": "rgba(56,161,105,0.12)"},
+            ],
+        },
+    ))
+    fig.update_layout(
+        paper_bgcolor=FUNDO,
+        font={"color": TEXTO, "family": "Inter"},
+        height=210,
+        margin=dict(l=15, r=15, t=40, b=5),
+    )
     return fig
 
 

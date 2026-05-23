@@ -18,7 +18,7 @@ from core.financas import (
     aliquota_iof_renda_fixa,
 )
 from core.dados import obter_dados_completos, CATEGORIAS_TITULOS, TITULOS_CONFIG
-from core.graficos import grafico_paradoxo
+from core.graficos import grafico_paradoxo, grafico_score
 
 
 # Cache da série do paradoxo — evita recálculo a cada interação de widget
@@ -31,17 +31,21 @@ def render():
     # -----------------------------------------------------------------------
     # Cabeçalho
     # -----------------------------------------------------------------------
-    st.markdown(
-        '<p class="titulo-principal">Seu Dashboard</p>'
-        '<p class="subtitulo">Visualize o paradoxo da renda fixa: a volatilidade que você '
-        '<em>sente</em> versus a segurança que você <em>tem</em>.</p>',
-        unsafe_allow_html=True,
-    )
+    st.markdown("""
+<div class="hero-banner">
+  <div>
+    <div class="hero-tag">Dashboard Principal</div>
+    <h1 class="hero-title">Renda Fixa <span>CF</span></h1>
+    <p class="hero-subtitle">Visualize o paradoxo da renda fixa: a volatilidade que você
+    <em>sente</em> versus a segurança que você <em>tem</em>.</p>
+  </div>
+  <div class="hero-badge">📊 Tesouro Direto</div>
+</div>
+""", unsafe_allow_html=True)
 
     with st.spinner("Carregando dados do Tesouro Direto e BCB..."):
         df_ipca, df_titulos, vna = obter_dados_completos()
 
-    # Indicador de fonte dos dados
     fonte = "✅ Dados ao vivo — Tesouro Direto" if not df_titulos.empty else "⚠️ Modo offline — dados de referência"
     st.caption(fonte)
     st.divider()
@@ -93,6 +97,15 @@ def render():
             max_value=date.today() - timedelta(days=1),
         )
 
+    descontar_custodia = st.checkbox(
+        "Considerar Taxa de Custódia B3 (0,20% a.a.)",
+        value=False,
+        help=(
+            "A B3 cobra 0,20% a.a. sobre o valor dos títulos no Tesouro Direto. "
+            "Exceção: Tesouro Selic até R$ 10.000 é isento (regra vigente desde 2023)."
+        ),
+    )
+
     st.divider()
 
     # -----------------------------------------------------------------------
@@ -102,11 +115,13 @@ def render():
 
     if not linha.empty:
         taxa_mercado_pct = float(linha["taxa_compra"].values[0])
+        taxa_venda_pct   = float(linha["taxa_venda"].values[0]) if "taxa_venda" in linha.columns else None
         data_vencimento  = date.fromisoformat(str(linha["vencimento"].values[0])[:10])
     else:
         # Fallback: usa TITULOS_CONFIG para vencimento e simula taxa 200 bps acima da contratada
         cfg_titulo       = TITULOS_CONFIG.get(titulo_sel, {})
         taxa_mercado_pct = taxa_contratada_pct + 2.0
+        taxa_venda_pct   = None
         data_vencimento  = cfg_titulo.get("vencimento", date(2035, 5, 15))
 
     taxa_contratada = taxa_contratada_pct / 100
@@ -150,6 +165,20 @@ def render():
     anos_totais      = (data_vencimento - data_compra).days / 365
     valor_vencimento = valor_investido * (1 + taxa_contratada) ** anos_totais
 
+    # Score Comportamental — reflete serenidade do investidor com a posição atual
+    diff_pct   = (resultado["mam"] - valor_investido) / valor_investido * 100
+    time_bonus = min(15.0, anos_restantes * 1.5)
+    score      = max(0.0, min(100.0, 60.0 + diff_pct * 3.0 + time_bonus))
+
+    # Persiste na session_state para o mini-resumo da sidebar
+    st.session_state["_dash_pos"] = {
+        "titulo":    titulo_sel,
+        "mam":       resultado["mam"],
+        "carrego":   valor_vencimento,
+        "data_venc": data_vencimento,
+        "score":     score,
+    }
+
     # -----------------------------------------------------------------------
     # Cards de KPI
     # -----------------------------------------------------------------------
@@ -181,6 +210,15 @@ def render():
             delta_color="normal",
             help="Valor que você receberia se vender hoje — sujeito à Marcação a Mercado",
         )
+        if taxa_venda_pct and taxa_venda_pct > taxa_mercado_pct:
+            spread_bps = (taxa_venda_pct - taxa_mercado_pct) * 100
+            pu_venda_est = pu_ntnb(vna, taxa_venda_pct / 100, date.today(), data_vencimento, cpns_hoje)
+            spread_rs = (resultado["pu_hoje"] - pu_venda_est) * resultado["quantidade"]
+            st.caption(
+                f"⚠️ Spread bid-ask: {spread_bps:.0f} bps "
+                f"(compra {taxa_mercado_pct:.2f}% / recompra pelo Tesouro {taxa_venda_pct:.2f}%). "
+                f"Impacto estimado: {formatar_brl(spread_rs)} a menos no resgate real."
+            )
 
     with col3:
         ganho_real_pct = (valor_vencimento / valor_investido - 1) * 100
@@ -212,9 +250,12 @@ def render():
             help=help_venc,
         )
 
-    # Banner explicativo — aparece quando MaM < capital investido
-    if resultado["mam"] < valor_investido:
-        st.markdown("""
+    # Banner comportamental + gauge de serenidade (lado a lado)
+    col_banner, col_gauge = st.columns([1.8, 1])
+
+    with col_banner:
+        if resultado["mam"] < valor_investido:
+            st.markdown("""
         <div class="alerta-mercado">
             ⚠️ <strong>Por que minha carteira aparece "negativa"?</strong><br>
             <small>
@@ -226,8 +267,8 @@ def render():
             </small>
         </div>
         """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
+        else:
+            st.markdown("""
         <div class="badge-seguranca">
             ✅ <strong>Sua posição está acima do capital investido.</strong><br>
             <small>
@@ -237,6 +278,47 @@ def render():
             </small>
         </div>
         """, unsafe_allow_html=True)
+
+    with col_gauge:
+        st.metric(
+            label="Índice de Serenidade",
+            value="",
+            help=(
+                "Score de 0 a 100 que combina dois fatores:\n\n"
+                "**1.** Diferença entre o valor de mercado hoje (MaM) e o seu capital investido "
+                "— quando o MaM está abaixo do capital, o score cai.\n\n"
+                "**2.** Tempo restante até o vencimento — quanto mais prazo, maior o bônus, "
+                "pois o tempo é o principal aliado do investidor de longo prazo.\n\n"
+                "Um score alto significa que você pode ignorar as oscilações com segurança."
+            ),
+        )
+        st.plotly_chart(grafico_score(score), use_container_width=True)
+
+    # -----------------------------------------------------------------------
+    # Taxa de Custódia B3
+    # -----------------------------------------------------------------------
+    if descontar_custodia:
+        is_selic = "Selic" in titulo_sel or "Reserva" in titulo_sel
+        isento   = is_selic and valor_investido <= 10_000.0
+        if isento:
+            st.success(
+                "**Isenção aplicada:** Tesouro Selic/Reserva com valor até R$ 10.000 "
+                "é isento da taxa de custódia B3 (regra vigente desde 2023).",
+                icon="✅",
+            )
+        else:
+            custo_anual   = resultado["mam"] * 0.002
+            custo_total   = resultado["mam"] * (1 - (1 - 0.002) ** anos_restantes)
+            venc_ajustado = valor_vencimento * (1 - 0.002) ** anos_restantes
+            reducao_pct   = (valor_vencimento - venc_ajustado) / valor_vencimento * 100
+            st.info(
+                f"**Taxa de Custódia B3 (0,20% a.a.)** — impacto estimado sobre sua posição:\n\n"
+                f"- Custo anual (sobre valor de mercado atual): **{formatar_brl(custo_anual)}/ano**\n"
+                f"- Custo total estimado até {data_vencimento.strftime('%d/%m/%Y')}: "
+                f"**{formatar_brl(custo_total)}** ({reducao_pct:.1f}% do resgate bruto)\n"
+                f"- Resgate estimado no vencimento após custódia: **{formatar_brl(venc_ajustado)}**",
+                icon="💰",
+            )
 
     # -----------------------------------------------------------------------
     # Trava de IOF Regressivo (3.3)
@@ -337,7 +419,12 @@ choque. <strong>Vender agora cristaliza o prejuízo; aguardar o vencimento o eli
         )
 
     with col_graf:
-        fig = grafico_paradoxo(df_paradoxo)
+        fig = grafico_paradoxo(
+            df_paradoxo,
+            data_compra=data_compra,
+            data_vencimento=data_vencimento,
+            datas_cupom=cpns_hoje if tem_cupom else None,
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     with col_legenda:

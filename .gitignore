@@ -4,3 +4,9 @@ __pycache__/
 .env
 venv/
 .venv/
+.meta/
+.claude/
+*.bat
+*.ico
+criar_atalho.py
+renda_fixa_app/
