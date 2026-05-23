@@ -460,6 +460,14 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
                 f"Fav: **{a['ret_fav']:.1f}%** · "
                 f"Real: **{a['ret_real']:.1f}%**"
             )
+            vf_adv = capital * (1 + a['ret_adv'] / 100) ** H
+            vf_neu = capital * (1 + a['ret_neu'] / 100) ** H
+            vf_fav = capital * (1 + a['ret_fav'] / 100) ** H
+            st.caption(
+                f"Adv: {formatar_brl(vf_adv)} · "
+                f"Neutro: {formatar_brl(vf_neu)} · "
+                f"Fav: {formatar_brl(vf_fav)}"
+            )
 
     if len(analises) > 6:
         st.caption(f"Mostrando os primeiros 6 de {len(analises)} títulos selecionados nos cards acima.")
