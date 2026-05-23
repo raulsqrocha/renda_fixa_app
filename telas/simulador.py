@@ -284,8 +284,18 @@ que a taxa real mudou.
             nome_curto = ativo.replace("Tesouro ", "")
             suficiente = prazo_saida < meta["t_anos"]
             delta_str = f"T = {meta['t_anos']} anos" if suficiente else f"T = {meta['t_anos']} anos ⚠️"
+            help_str = (
+                None if suficiente else
+                f"Este título vence em {meta['t_anos']} ano(s), antes do prazo de saída "
+                f"de {prazo_saida} ano(s) selecionado.\n\n"
+                f"A MaM só existe quando você vende **antes** do vencimento. Como o título "
+                f"já teria chegado ao fim do prazo, você receberia exatamente a taxa "
+                f"contratada — sem ganho nem perda de preço.\n\n"
+                f"Para simular MaM com este título, escolha um prazo de saída menor "
+                f"que {meta['t_anos']} ano(s)."
+            )
             with cols_meta[i]:
-                st.metric(nome_curto, f"{meta['taxa']:.2f}% a.a.", delta_str)
+                st.metric(nome_curto, f"{meta['taxa']:.2f}% a.a.", delta_str, help=help_str)
 
         with st.expander("🛠️  Configurar cenários macroeconômicos", expanded=True):
             st.caption(
