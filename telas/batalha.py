@@ -154,11 +154,49 @@ def render():
 
     with col_macro:
         st.markdown("**Projeção Macroeconômica**")
-        ipca_pct  = st.slider("🌡️ IPCA Projetado (% a.a.)",  1.0, 15.0, 5.0,  0.1,  format="%.1f%%")
-        selic_pct = st.slider("🏦 Selic Projetada (% a.a.)", 2.0, 25.0, 13.0, 0.25, format="%.2f%%")
+        ipca_pct  = st.slider(
+            "🌡️ IPCA Projetado (% a.a.)", 1.0, 15.0, 5.0, 0.1, format="%.1f%%",
+            help=(
+                "**O que é:** o IPCA é o índice oficial de inflação do Brasil, medido "
+                "mensalmente pelo IBGE. Representa o quanto os preços subiram no período.\n\n"
+                "**O que colocar aqui:** sua estimativa de inflação média por ano ao longo "
+                "de todo o período simulado — não a inflação de hoje, mas a *média* que você "
+                "projeta para os próximos anos.\n\n"
+                "**Exemplo:** se você acredita que nos próximos 5 anos o Brasil terá em média "
+                "5% de inflação ao ano, coloque 5,0.\n\n"
+                "**Dica:** esse número não afeta o ganho real do Tesouro IPCA+, que é travado "
+                "no contrato. Ele muda apenas o valor nominal final da simulação."
+            ),
+        )
+        selic_pct = st.slider(
+            "🏦 Selic Projetada (% a.a.)", 2.0, 25.0, 13.0, 0.25, format="%.2f%%",
+            help=(
+                "**O que é:** a Selic é a taxa básica de juros do Brasil, definida pelo "
+                "Banco Central a cada 45 dias. O Tesouro Selic rende aproximadamente a Selic.\n\n"
+                "**O que colocar aqui:** sua estimativa da Selic média por ano ao longo de "
+                "todo o período simulado — não a Selic de hoje, mas a *média* que você projeta "
+                "para os próximos anos.\n\n"
+                "**Exemplo:** se a Selic está em 13,75% hoje mas você acredita que vai cair "
+                "gradualmente, coloque uma média mais baixa, como 11,0%.\n\n"
+                "**Por que importa:** o Tesouro Selic e a fase de reinvestimento (quando um "
+                "título vence antes do seu horizonte) usam esse valor para calcular o retorno."
+            ),
+        )
         choque_pp = st.slider(
             "⚡ Choque de Taxa (p.p.)", 0.25, 3.0, 1.0, 0.25, format="%.2f p.p.",
-            help="Magnitude da variação de juros nos cenários Adverso e Favorável",
+            help=(
+                "**O que é:** simula quanto as taxas de juros podem subir ou cair nos "
+                "cenários de estresse.\n\n"
+                "**Cenário Adverso:** taxas sobem esse valor. Quem precisar vender antes "
+                "do vencimento recebe menos — é a Marcação a Mercado (MaM) funcionando "
+                "contra o investidor.\n\n"
+                "**Cenário Favorável:** taxas caem esse valor. Quem vender antes do "
+                "vencimento recebe mais do que contratou.\n\n"
+                "**Exemplo com 1 p.p.:** se a taxa do título é 7%, o cenário adverso "
+                "simula 8% e o favorável simula 6%.\n\n"
+                "**Atenção:** o Tesouro Selic não sofre esse efeito — por ser pós-fixado, "
+                "não tem risco de variação de preço."
+            ),
         )
 
     with col_sel:
