@@ -9,6 +9,7 @@ import streamlit as st
 import pandas as pd
 
 from core.dados import obter_dados_completos, montar_catalogo_batalha
+from core.persistencia import carregar, salvar, inicializar_session
 from core.financas import (
     analise_batalha,
     formatar_brl,
@@ -113,6 +114,12 @@ def _insight_texto(w: dict, horizonte: int, ipca: float, com_ir: bool) -> str:
 
 
 def render():
+    st.session_state["_page_id"] = "batalha"
+
+    # Carrega preferências salvas antes de qualquer widget
+    _prefs = carregar()
+    inicializar_session(_prefs)
+
     # -----------------------------------------------------------------------
     # Cabeçalho
     # -----------------------------------------------------------------------
@@ -136,16 +143,19 @@ def render():
 
     with col_h:
         st.markdown("**Quando precisa do dinheiro?**")
-        horizonte = st.slider("Horizonte de saída (anos)", min_value=1, max_value=15, value=3)
+        horizonte = st.slider("Horizonte de saída (anos)", min_value=1, max_value=15, value=3,
+                              key="bat_horizonte")
         capital   = st.number_input(
             "Capital Inicial (R$)",
             min_value=100.0, max_value=1_000_000.0,
             value=10_000.0, step=500.0, format="%.2f",
+            key="bat_capital",
         )
         com_ir = st.checkbox(
             "Calcular com IR regressivo",
             value=True,
             help="Alíquota regressiva sobre o lucro nominal: 22,5% (≤6m) → 20% (≤1a) → 17,5% (≤2a) → 15% (>2a)",
+            key="bat_com_ir",
         )
         if com_ir:
             aliq = aliquota_ir_renda_fixa(horizonte)
@@ -155,6 +165,7 @@ def render():
         st.markdown("**Projeção Macroeconômica**")
         ipca_pct  = st.slider(
             "🌡️ IPCA Projetado (% a.a.)", 1.0, 15.0, 5.0, 0.1, format="%.1f%%",
+            key="bat_ipca",
             help=(
                 "**O que é:** o IPCA é o índice oficial de inflação do Brasil, medido "
                 "mensalmente pelo IBGE. Representa o quanto os preços subiram no período.\n\n"
@@ -169,6 +180,7 @@ def render():
         )
         selic_pct = st.slider(
             "🏦 Selic Projetada (% a.a.)", 2.0, 25.0, 13.0, 0.25, format="%.2f%%",
+            key="bat_selic",
             help=(
                 "**O que é:** a Selic é a taxa básica de juros do Brasil, definida pelo "
                 "Banco Central a cada 45 dias. O Tesouro Selic rende aproximadamente a Selic.\n\n"
@@ -183,6 +195,7 @@ def render():
         )
         choque_pp = st.slider(
             "⚡ Choque de Taxa (p.p.)", 0.25, 3.0, 1.0, 0.25, format="%.2f p.p.",
+            key="bat_choque",
             help=(
                 "**O que é:** simula quanto as taxas de juros podem subir ou cair nos "
                 "cenários de estresse.\n\n"
@@ -200,14 +213,26 @@ def render():
 
     with col_sel:
         st.markdown("**Títulos a Comparar**")
-        catalogo    = montar_catalogo_batalha(df_titulos, selic_pct)
-        opcoes      = [t["nome"] for t in catalogo]
-        defaults_ok = [d for d in _DEFAULTS if d in opcoes]
+        catalogo = montar_catalogo_batalha(df_titulos, selic_pct)
+        opcoes   = [t["nome"] for t in catalogo]
+
+        # Garante que bat_selecionados sempre tem itens válidos do catálogo atual
+        if "bat_selecionados" not in st.session_state or not st.session_state["bat_selecionados"]:
+            st.session_state["bat_selecionados"] = (
+                [d for d in _DEFAULTS if d in opcoes] or (opcoes[:5] if opcoes else [])
+            )
+        else:
+            st.session_state["bat_selecionados"] = (
+                [a for a in st.session_state["bat_selecionados"] if a in opcoes]
+                or [d for d in _DEFAULTS if d in opcoes]
+                or (opcoes[:5] if opcoes else [])
+            )
+
         selecionados = st.multiselect(
             "Selecione os títulos",
             options=opcoes,
-            default=defaults_ok,
             help="Todos os títulos disponíveis — IPCA+, RendA+, Educar+, Prefixado e Selic.",
+            key="bat_selecionados",
         )
 
     # -----------------------------------------------------------------------
@@ -407,7 +432,10 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
     # Cálculos principais
     # -----------------------------------------------------------------------
     if not selecionados:
-        st.info("Selecione ao menos um título na seção acima para ver a análise completa.")
+        st.warning(
+            "Selecione ao menos um título na seção **Títulos a Comparar** acima para ver a análise completa.",
+            icon="👆",
+        )
         return
 
     titulos_sel = [t for t in catalogo if t["nome"] in selecionados]
@@ -436,6 +464,42 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
         if selic_analise and vencedor["tipo"] != "selic"
         else None
     )
+
+    # -----------------------------------------------------------------------
+    # Mensagens Adaptativas por Cenário
+    # -----------------------------------------------------------------------
+    _todos_tipos = {a["tipo"] for a in analises}
+    _exposicoes  = [a["anos_expo"] for a in analises if a["tipo"] != "selic"]
+    _alta_expo   = sum(1 for e in _exposicoes if e > 3)
+
+    if horizonte <= 2 and _alta_expo == len(_exposicoes) and _exposicoes:
+        st.warning(
+            f"⚠️ **Horizonte curto ({horizonte} ano(s)) + todos os títulos selecionados têm alta exposição ao MaM.** "
+            "Considere adicionar o **Tesouro Selic** à comparação — é o único título sem risco de "
+            "Marcação a Mercado para prazos curtos.",
+            icon="⚡",
+        )
+    elif ipca_pct > selic_pct:
+        st.warning(
+            f"📉 **Selic real negativa:** com IPCA projetado em {ipca_pct:.1f}% e Selic em {selic_pct:.2f}%, "
+            "o Tesouro Selic **perde poder de compra**. "
+            "O Tesouro IPCA+ é mais indicado para preservar o valor real do patrimônio neste cenário.",
+            icon="🌡️",
+        )
+    elif horizonte > 7 and "selic" in _todos_tipos and len(_todos_tipos) == 1:
+        st.info(
+            f"💡 **Horizonte longo ({horizonte} anos) com apenas Selic selecionado.** "
+            "Para prazos acima de 5 anos, títulos com taxa **travada** (IPCA+ ou Prefixado) "
+            "costumam entregar retorno real superior ao Selic. Adicione um IPCA+ à comparação.",
+            icon="🔍",
+        )
+    elif len(_todos_tipos) == 1 and "ipca_mais" in _todos_tipos and horizonte <= 3:
+        st.info(
+            f"💡 **Apenas títulos IPCA+ selecionados para {horizonte} ano(s).** "
+            "Para horizontes curtos, IPCA+ pode ter risco significativo de MaM. "
+            "Considere comparar com o **Tesouro Selic** como alternativa sem volatilidade de preço.",
+            icon="🔍",
+        )
 
     # -----------------------------------------------------------------------
     # Semáforo de Risco
@@ -593,3 +657,16 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
         "Taxas Prefixado são referências — confira os valores atuais no Tesouro Direto. "
         "RendA+ e Educar+ têm regras específicas de IR na fase de renda (simplificado aqui)."
     )
+
+    # -----------------------------------------------------------------------
+    # Persiste preferências
+    # -----------------------------------------------------------------------
+    salvar({
+        "bat_horizonte":    st.session_state.get("bat_horizonte", 3),
+        "bat_capital":      st.session_state.get("bat_capital", 10_000.0),
+        "bat_com_ir":       st.session_state.get("bat_com_ir", True),
+        "bat_ipca":         st.session_state.get("bat_ipca", 5.0),
+        "bat_selic":        st.session_state.get("bat_selic", 13.0),
+        "bat_choque":       st.session_state.get("bat_choque", 1.0),
+        "bat_selecionados": st.session_state.get("bat_selecionados", _DEFAULTS),
+    })

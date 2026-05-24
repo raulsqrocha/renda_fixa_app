@@ -19,6 +19,7 @@ from core.graficos import (
     grafico_cenarios,
     grafico_curva_di,
 )
+from core.persistencia import carregar, salvar, inicializar_session
 
 # Nomes dos cenários do simulador de MaM — do mais adverso ao mais favorável
 _NOMES_CENARIOS = [
@@ -57,6 +58,22 @@ def _cor_retorno(val: str) -> str:
 
 
 def render():
+    st.session_state["_page_id"] = "simulador"
+
+    # Carrega preferências salvas antes de qualquer widget
+    _prefs = carregar()
+    inicializar_session(_prefs)
+
+    # Garante que o título salvo é válido para a categoria salva
+    _cat = st.session_state.get("sim_categoria")
+    if _cat and _cat in CATEGORIAS_TITULOS:
+        _titulos_validos = CATEGORIAS_TITULOS[_cat]
+        if st.session_state.get("sim_titulo") not in _titulos_validos:
+            st.session_state["sim_titulo"] = _titulos_validos[0]
+    elif _cat and _cat not in CATEGORIAS_TITULOS:
+        st.session_state.pop("sim_categoria", None)
+        st.session_state.pop("sim_titulo", None)
+
     # -----------------------------------------------------------------------
     # Cabeçalho
     # -----------------------------------------------------------------------
@@ -85,6 +102,7 @@ def render():
             "Categoria",
             options=list(CATEGORIAS_TITULOS.keys()),
             help="Selecione a família do título Tesouro",
+            key="sim_categoria",
         )
 
     with col_venc:
@@ -92,6 +110,7 @@ def render():
             "Vencimento",
             options=CATEGORIAS_TITULOS[categoria_sel],
             help="Selecione o ano de vencimento",
+            key="sim_titulo",
         )
 
     # Resolve dados do título antes da Row 2 para exibir métricas no mesmo grid
@@ -115,6 +134,7 @@ def render():
             "Capital a Simular (R$)",
             min_value=100.0, max_value=500_000.0,
             value=10_000.0, step=500.0, format="%.2f",
+            key="sim_valor",
         )
 
     with col_taxa_m:
@@ -143,16 +163,19 @@ def render():
             "📉  Inflação Baixa (IPCA % a.a.)",
             min_value=1.0, max_value=5.0, value=3.0, step=0.1, format="%.1f%%",
             help="Cenário otimista — inflação próxima ou abaixo da meta do BCB",
+            key="sim_ipca_baixo",
         )
         ipca_base = st.slider(
             "📊  Cenário Base (IPCA % a.a.)",
             min_value=3.0, max_value=8.0, value=4.5, step=0.1, format="%.1f%%",
             help="Cenário mais provável conforme expectativas do mercado (Focus/BCB)",
+            key="sim_ipca_base",
         )
         ipca_estresse = st.slider(
             "🔥  Estresse / Hiperinflação (IPCA % a.a.)",
             min_value=6.0, max_value=20.0, value=9.0, step=0.5, format="%.1f%%",
             help="Cenário adverso — similar a 2015 ou crises de supply chain",
+            key="sim_ipca_estresse",
         )
 
         st.info(
@@ -248,12 +271,19 @@ que a taxa real mudou.
     with col_m1:
         titulos_validos = [t for t, cfg in TITULOS_CONFIG.items()
                            if cfg["vencimento"] > date.today()]
-        default_ativos = [titulo] if titulo in titulos_validos else titulos_validos[:1]
+        # Se não há valor salvo, inicializa com o título atual como padrão
+        if "sim_ativos_sel" not in st.session_state or not st.session_state["sim_ativos_sel"]:
+            st.session_state["sim_ativos_sel"] = [titulo] if titulo in titulos_validos else titulos_validos[:1]
+        # Filtra opções que possam ter saído da lista de títulos válidos
+        else:
+            st.session_state["sim_ativos_sel"] = [
+                a for a in st.session_state["sim_ativos_sel"] if a in titulos_validos
+            ] or ([titulo] if titulo in titulos_validos else titulos_validos[:1])
         ativos_sel = st.multiselect(
             "Ativos para Simular",
             options=titulos_validos,
-            default=default_ativos,
             help="Selecione os ativos a comparar. Cada ativo usa seu prazo correto (T) na fórmula.",
+            key="sim_ativos_sel",
         )
 
     with col_m2:
@@ -263,10 +293,11 @@ que a taxa real mudou.
             index=0,
             format_func=lambda x: f"{x} anos",
             help="Horizonte de venda antecipada — N na fórmula MaM.",
+            key="sim_prazo_saida",
         )
 
     if not ativos_sel:
-        st.info("Selecione ao menos um ativo acima para calcular os retornos.")
+        st.warning("Selecione ao menos um ativo no campo acima para calcular os retornos de MaM.", icon="👆")
     else:
         # Metadata por ativo: T (anos até vencimento) e taxa de compra de mercado
         ativos_meta = {}
@@ -367,17 +398,22 @@ que a taxa real mudou.
         )
 
     st.divider()
+    st.subheader("📚  Referência de Mercado")
+    st.caption("Dados de contexto para calibrar suas simulações. Não são gerados automaticamente — insira manualmente ou consulte sua corretora.")
 
+    _aba_di, _aba_ipca = st.tabs(["📐  DI Futuro — Curva de Juros", "📜  Retrospecto Histórico IPCA"])
+
+    with _aba_di:
     # -----------------------------------------------------------------------
     # 3. DI Futuro — Curva de Juros
     # -----------------------------------------------------------------------
-    st.subheader("📐  DI Futuro — Curva de Juros")
+        st.subheader("📐  DI Futuro — Curva de Juros")
 
-    with st.expander("📖  O que é o DI Futuro e por que ele importa?", expanded=True):
-        col_exp1, col_exp2 = st.columns([3, 2])
+        with st.expander("📖  O que é o DI Futuro e por que ele importa?", expanded=True):
+            col_exp1, col_exp2 = st.columns([3, 2])
 
-        with col_exp1:
-            st.markdown("""
+            with col_exp1:
+                st.markdown("""
 O **DI Futuro** é o contrato mais líquido negociado na **B3** (Bolsa brasileira).
 Ele representa a **expectativa coletiva do mercado** para a taxa de juros (CDI) em datas futuras.
 
@@ -395,10 +431,10 @@ Se você aguardar o vencimento, essa flutuação não tem efeito algum sobre o q
 - 📱 **Corretora**: aba Renda Fixa ou Derivativos da sua plataforma
 - 📊 **Investing.com**: busque por "DI Futuro Brasil"
 - 💼 **Bloomberg**: `DI1 <Cmdty>` ou `BZCR <Index>`
-            """)
+                """)
 
-        with col_exp2:
-            st.markdown("""
+            with col_exp2:
+                st.markdown("""
 **Exemplo de leitura:**
 
 | Contrato | Taxa Implícita |
@@ -412,49 +448,51 @@ mais altos no longo prazo — sinal de desconfiança fiscal ou inflação persis
 
 Uma curva **plana ou invertida** sinaliza que o mercado espera queda de juros
 no futuro — cenário positivo para quem detém títulos longos.
-            """)
+                """)
 
-    st.markdown("**Insira as taxas do DI Futuro (conforme dados mais recentes da B3):**")
+        st.markdown("**Insira as taxas do DI Futuro (conforme dados mais recentes da B3):**")
 
-    vencimentos_di = ["Jan/27", "Jan/28", "Jan/29", "Jan/31", "Jan/33", "Jan/35"]
-    defaults_di    = [13.20, 13.40, 13.55, 13.68, 13.82, 13.90]
+        vencimentos_di = ["Jan/27", "Jan/28", "Jan/29", "Jan/31", "Jan/33", "Jan/35"]
+        _di_keys       = ["sim_di_jan27", "sim_di_jan28", "sim_di_jan29",
+                          "sim_di_jan31", "sim_di_jan33", "sim_di_jan35"]
+        defaults_di    = [13.20, 13.40, 13.55, 13.68, 13.82, 13.90]
 
-    cols_di   = st.columns(len(vencimentos_di))
-    di_inputs = []
+        cols_di   = st.columns(len(vencimentos_di))
+        di_inputs = []
 
-    for col, venc, default in zip(cols_di, vencimentos_di, defaults_di):
-        with col:
-            taxa = st.number_input(
-                f"DI {venc}",
-                min_value=5.0, max_value=30.0,
-                value=default, step=0.05, format="%.2f",
-            )
-            di_inputs.append({"vencimento": venc, "taxa": taxa})
+        for col, venc, default, dk in zip(cols_di, vencimentos_di, defaults_di, _di_keys):
+            with col:
+                taxa = st.number_input(
+                    f"DI {venc}",
+                    min_value=5.0, max_value=30.0,
+                    value=default, step=0.05, format="%.2f",
+                    key=dk,
+                )
+                di_inputs.append({"vencimento": venc, "taxa": taxa})
 
-    fig_di = grafico_curva_di(di_inputs)
-    st.plotly_chart(fig_di, use_container_width=True)
+        fig_di = grafico_curva_di(di_inputs)
+        st.plotly_chart(fig_di, use_container_width=True)
 
-    st.caption(
-        "⚠️ As taxas acima são inseridas manualmente. "
-        "Atualize-as com os dados mais recentes da B3 para uma análise precisa."
-    )
+        st.caption(
+            "⚠️ As taxas acima são inseridas manualmente. "
+            "Atualize-as com os dados mais recentes da B3 para uma análise precisa."
+        )
 
-    st.divider()
-
+    with _aba_ipca:
     # -----------------------------------------------------------------------
     # 4. Retrospecto Histórico — IPCA
     # -----------------------------------------------------------------------
-    st.subheader("📜  Retrospecto Histórico — IPCA no Brasil")
+        st.subheader("📜  Retrospecto Histórico — IPCA no Brasil")
 
-    col_h1, col_h2 = st.columns([3, 2])
+        col_h1, col_h2 = st.columns([3, 2])
 
-    with col_h1:
-        fig_ipca = grafico_ipca_historico(df_ipca)
-        st.plotly_chart(fig_ipca, use_container_width=True)
+        with col_h1:
+            fig_ipca = grafico_ipca_historico(df_ipca)
+            st.plotly_chart(fig_ipca, use_container_width=True)
 
-    with col_h2:
-        st.markdown("### Marcos Históricos")
-        st.markdown("""
+        with col_h2:
+            st.markdown("### Marcos Históricos")
+            st.markdown("""
 **2015 — Crise Fiscal Brasileira (10,67%)**
 Ajuste fiscal, desvalorização cambial e colapso das commodities elevaram a inflação
 ao maior nível em 13 anos, forçando o BCB a subir a Selic para 14,25%.
@@ -481,16 +519,28 @@ gradual que se estendeu até 2023.
 
 💡 **Lição central:** a inflação oscila em ciclos. O **Tesouro IPCA+** protege
 seu poder de compra em **todos** esses cenários — é exatamente para isso que ele existe.
-        """)
+            """)
 
-    with st.expander("📋  Ver série completa do IPCA (mensal)", expanded=False):
-        df_display = df_ipca.copy()
-        df_display["Mês/Ano"] = df_display["data"].dt.strftime("%b/%Y")
-        df_display["IPCA (%)"] = df_display["valor"].map(lambda v: f"{v:.2f}%")
-        st.dataframe(
-            df_display[["Mês/Ano", "IPCA (%)"]].sort_values("Mês/Ano", ascending=False),
-            use_container_width=True,
-            hide_index=True,
-            height=300,
-        )
-        st.caption("Fonte: Banco Central do Brasil — SGS Série 433 (IPCA mensal).")
+        with st.expander("📋  Ver série completa do IPCA (mensal)", expanded=False):
+            df_display = df_ipca.copy()
+            df_display["Mês/Ano"] = df_display["data"].dt.strftime("%b/%Y")
+            df_display["IPCA (%)"] = df_display["valor"].map(lambda v: f"{v:.2f}%")
+            st.dataframe(
+                df_display[["Mês/Ano", "IPCA (%)"]].sort_values("Mês/Ano", ascending=False),
+                use_container_width=True,
+                hide_index=True,
+                height=300,
+            )
+            st.caption("Fonte: Banco Central do Brasil — SGS Série 433 (IPCA mensal).")
+
+    # Persiste preferências do usuário para o próximo refresh
+    salvar({
+        "sim_categoria":     st.session_state.get("sim_categoria"),
+        "sim_titulo":        st.session_state.get("sim_titulo"),
+        "sim_ativos_sel":    st.session_state.get("sim_ativos_sel", []),
+        "sim_valor":         st.session_state.get("sim_valor", 10_000.0),
+        "sim_ipca_baixo":    st.session_state.get("sim_ipca_baixo", 3.0),
+        "sim_ipca_base":     st.session_state.get("sim_ipca_base", 4.5),
+        "sim_ipca_estresse": st.session_state.get("sim_ipca_estresse", 9.0),
+        "sim_prazo_saida":   st.session_state.get("sim_prazo_saida", 3),
+    })

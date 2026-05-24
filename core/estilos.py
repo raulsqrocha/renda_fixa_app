@@ -120,35 +120,98 @@ def sidebar_info() -> None:
 </div>
 """, unsafe_allow_html=True)
 
-        # Mini-resumo da posição — populado pelo Dashboard após o primeiro render
-        pos = st.session_state.get("_dash_pos")
-        if pos:
-            score     = pos["score"]
-            cor_score = "#38A169" if score >= 70 else "#ECC94B" if score >= 40 else "#E53E3E"
-            data_v    = pos["data_venc"].strftime("%d/%m/%Y")
-            st.markdown(f"""
+        # ── Contexto da página ativa ────────────────────────────────────
+        page_id = st.session_state.get("_page_id", "dashboard")
+        pos     = st.session_state.get("_dash_pos")
+
+        # Dashboard: mini-resumo consolidado do portfólio
+        if page_id == "dashboard":
+            portfolio = st.session_state.get("_portfolio", [])
+            if portfolio:
+                total_cap     = sum(p["valor"]         for p in portfolio)
+                total_mam     = sum(p.get("mam_cache",     p["valor"])     for p in portfolio)
+                total_carrego = sum(p.get("carrego_cache", p["valor"])     for p in portfolio)
+                var_pct       = (total_mam - total_cap) / total_cap * 100
+                cor_var       = "#38A169" if var_pct >= 0 else "#E53E3E"
+                scores        = [st.session_state.get("_dash_pos", {}).get("score")]
+                saude         = pos["score"] if pos else None
+                cor_saude     = "#38A169" if saude and saude >= 70 else "#ECC94B" if saude and saude >= 40 else "#E53E3E"
+                saude_html    = (
+                    f'<div style="background:#0E1117; border-radius:4px; height:5px; margin-bottom:0.2rem;">'
+                    f'  <div style="background:{cor_saude}; width:{saude:.0f}%; height:5px; border-radius:4px;"></div>'
+                    f'</div>'
+                    f'<div style="font-size:0.68rem; color:#718096;">Saúde: {saude:.0f}/100</div>'
+                ) if saude is not None else ""
+                st.markdown(f"""
 <div style="background:#1C2331; border:1px solid #2D3748; border-radius:10px;
             padding:0.8rem 1rem; margin-bottom:1.2rem;">
   <div style="font-size:0.68rem; color:#38A169; text-transform:uppercase;
-              letter-spacing:0.08em; margin-bottom:0.45rem; font-weight:600;">Sua Posição</div>
-  <div style="font-size:0.8rem; color:#FAFAFA; font-weight:600;
-              margin-bottom:0.55rem; line-height:1.3;">{pos['titulo'][:32]}</div>
+              letter-spacing:0.08em; margin-bottom:0.45rem; font-weight:600;">Seu Portfólio</div>
+  <div style="font-size:0.68rem; color:#718096; margin-bottom:0.45rem;">{len(portfolio)} posição(ões)</div>
+  <div style="display:flex; justify-content:space-between; font-size:0.76rem; margin-bottom:0.2rem;">
+    <span style="color:#718096;">Capital</span>
+    <span style="color:#FAFAFA;">{formatar_brl(total_cap)}</span>
+  </div>
   <div style="display:flex; justify-content:space-between; font-size:0.76rem; margin-bottom:0.2rem;">
     <span style="color:#718096;">MaM Hoje</span>
-    <span style="color:#FAFAFA;">{formatar_brl(pos['mam'])}</span>
-  </div>
-  <div style="display:flex; justify-content:space-between; font-size:0.76rem; margin-bottom:0.2rem;">
-    <span style="color:#718096;">No Vencimento</span>
-    <span style="color:#38A169;">{formatar_brl(pos['carrego'])}</span>
+    <span style="color:{cor_var};">{formatar_brl(total_mam)} ({var_pct:+.1f}%)</span>
   </div>
   <div style="display:flex; justify-content:space-between; font-size:0.76rem; margin-bottom:0.55rem;">
-    <span style="color:#718096;">Vence em</span>
-    <span style="color:#FAFAFA;">{data_v}</span>
+    <span style="color:#718096;">No Vencimento</span>
+    <span style="color:#38A169;">{formatar_brl(total_carrego)}</span>
   </div>
-  <div style="background:#0E1117; border-radius:4px; height:5px; margin-bottom:0.2rem;">
-    <div style="background:{cor_score}; width:{score:.0f}%; height:5px; border-radius:4px;"></div>
+  {saude_html}
+</div>
+""", unsafe_allow_html=True)
+
+        # Simulador: contexto do título e capital simulado
+        elif page_id == "simulador":
+            sim_titulo = st.session_state.get("sim_titulo") or "—"
+            sim_valor  = st.session_state.get("sim_valor", 10_000.0)
+            st.markdown(f"""
+<div style="background:#1C2331; border:1px solid #2D3748; border-radius:10px;
+            padding:0.8rem 1rem; margin-bottom:1.2rem;">
+  <div style="font-size:0.68rem; color:#4299E1; text-transform:uppercase;
+              letter-spacing:0.08em; margin-bottom:0.45rem; font-weight:600;">Simulando</div>
+  <div style="font-size:0.8rem; color:#FAFAFA; font-weight:600;
+              margin-bottom:0.55rem; line-height:1.3;">{sim_titulo[:32]}</div>
+  <div style="display:flex; justify-content:space-between; font-size:0.76rem;">
+    <span style="color:#718096;">Capital</span>
+    <span style="color:#FAFAFA;">{formatar_brl(sim_valor)}</span>
   </div>
-  <div style="font-size:0.68rem; color:#718096;">Serenidade: {score:.0f}/100</div>
+</div>
+""", unsafe_allow_html=True)
+            # Mostra posição do Dashboard se existir
+            if pos:
+                st.caption(f"Posição no Dashboard: {pos['titulo'][:28]}")
+
+        # Qual Ativo: contexto de horizonte + parâmetros macro
+        elif page_id == "batalha":
+            horizonte = st.session_state.get("bat_horizonte", 3)
+            capital   = st.session_state.get("bat_capital", 10_000.0)
+            ipca      = st.session_state.get("bat_ipca", 5.0)
+            selic     = st.session_state.get("bat_selic", 13.0)
+            st.markdown(f"""
+<div style="background:#1C2331; border:1px solid #2D3748; border-radius:10px;
+            padding:0.8rem 1rem; margin-bottom:1.2rem;">
+  <div style="font-size:0.68rem; color:#ECC94B; text-transform:uppercase;
+              letter-spacing:0.08em; margin-bottom:0.45rem; font-weight:600;">Comparando Ativos</div>
+  <div style="display:flex; justify-content:space-between; font-size:0.76rem; margin-bottom:0.2rem;">
+    <span style="color:#718096;">Horizonte</span>
+    <span style="color:#FAFAFA;">{horizonte} ano(s)</span>
+  </div>
+  <div style="display:flex; justify-content:space-between; font-size:0.76rem; margin-bottom:0.2rem;">
+    <span style="color:#718096;">Capital</span>
+    <span style="color:#FAFAFA;">{formatar_brl(capital)}</span>
+  </div>
+  <div style="display:flex; justify-content:space-between; font-size:0.76rem; margin-bottom:0.2rem;">
+    <span style="color:#718096;">IPCA proj.</span>
+    <span style="color:#FAFAFA;">{ipca:.1f}% a.a.</span>
+  </div>
+  <div style="display:flex; justify-content:space-between; font-size:0.76rem;">
+    <span style="color:#718096;">Selic proj.</span>
+    <span style="color:#FAFAFA;">{selic:.2f}% a.a.</span>
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
