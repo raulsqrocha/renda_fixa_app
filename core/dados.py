@@ -38,8 +38,12 @@ URL_TESOURO_CSV = (
 # VNA da NTN-B em dez/2014 (fonte: ANBIMA histórico) — base para cálculo via BCB
 VNA_BASE_DEZ2014 = 2_712.00
 
-# VNA estimado para mai/2026 — usado no fallback de PU quando a API do BCB falha
-VNA_FALLBACK = 4_650.00
+# VNA dinâmico: VNA_BASE_DEZ2014 corrigido por IPCA ~5% a.a. até hoje
+# Usado apenas quando a API do BCB estiver offline (df_ipca vazio)
+VNA_FALLBACK = round(
+    VNA_BASE_DEZ2014 * (1.05) ** ((date.today() - date(2014, 12, 15)).days / 365),
+    2,
+)
 
 # ---------------------------------------------------------------------------
 # Catálogo completo de títulos suportados
@@ -139,6 +143,12 @@ def chave_cache_mercado() -> str:
     return f"{agora.date()}_{periodo}"
 
 
+@st.cache_data(ttl=3600 * 2)
+def timestamp_ultima_atualizacao(chave: str) -> datetime:
+    """Registra o momento exato em que os dados foram carregados. Cache sincronizado com buscar_titulos_tesouro."""
+    return datetime.now(pytz.timezone("America/Sao_Paulo"))
+
+
 # ---------------------------------------------------------------------------
 # IPCA — Banco Central do Brasil
 # ---------------------------------------------------------------------------
@@ -214,7 +224,7 @@ def calcular_vna_via_bcb(df_ipca: pd.DataFrame) -> float:
     df = df_ipca[df_ipca["data"] >= corte].copy()
 
     if df.empty:
-        return 4_650.00  # fallback estático para mai/2026
+        return VNA_FALLBACK  # fallback dinâmico quando API do BCB está offline
 
     fator = float(np.prod(1 + df["valor"].values / 100))
     return round(VNA_BASE_DEZ2014 * fator, 2)
@@ -372,10 +382,9 @@ def montar_catalogo_batalha(df_titulos: pd.DataFrame, selic_projetada: float) ->
     hoje = date.today()
     catalogo = []
 
-    if df_titulos.empty:
-        return catalogo
+    df = df_titulos if not df_titulos.empty else _titulos_fallback()
 
-    for _, row in df_titulos.iterrows():
+    for _, row in df.iterrows():
         nome = str(row["nome"]).strip()
         try:
             venc = date.fromisoformat(str(row["vencimento"])[:10])
@@ -400,6 +409,25 @@ def montar_catalogo_batalha(df_titulos: pd.DataFrame, selic_projetada: float) ->
         catalogo.append({
             "nome":       nome,
             "tipo":       tipo,
+            "vencimento": venc,
+            "anos_total": anos,
+            "taxa":       taxa,
+        })
+
+    # Complementa com títulos do TITULOS_CONFIG que não vieram no CSV
+    # (ex: RendA+ não é distribuído pelo endpoint padrão do Tesouro Transparente)
+    nomes_no_catalogo = {t["nome"] for t in catalogo}
+    for nome, cfg in TITULOS_CONFIG.items():
+        if nome in nomes_no_catalogo:
+            continue
+        venc = cfg["vencimento"]
+        if venc <= hoje + timedelta(days=30):
+            continue
+        anos = round((venc - hoje).days / 365, 2)
+        taxa = _TAXAS_REF.get(nome, 7.50)
+        catalogo.append({
+            "nome":       nome,
+            "tipo":       "ipca_mais",
             "vencimento": venc,
             "anos_total": anos,
             "taxa":       taxa,

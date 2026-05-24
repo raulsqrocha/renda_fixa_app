@@ -18,7 +18,7 @@ from core.financas import (
     aliquota_ir_renda_fixa,
     retorno_liquido_ir,
 )
-from core.dados import obter_dados_completos, CATEGORIAS_TITULOS, TITULOS_CONFIG, TITULOS_BATALHA
+from core.dados import obter_dados_completos, CATEGORIAS_TITULOS, TITULOS_CONFIG, TITULOS_BATALHA, timestamp_ultima_atualizacao, chave_cache_mercado
 from core.persistencia import carregar, salvar, inicializar_session
 from core.graficos import grafico_paradoxo, grafico_score
 import plotly.graph_objects as go
@@ -53,8 +53,12 @@ def render():
     with st.spinner("Carregando dados do Tesouro Direto e BCB..."):
         df_ipca, df_titulos, vna = obter_dados_completos()
 
-    fonte = "✅ Dados ao vivo — Tesouro Direto" if not df_titulos.empty else "⚠️ Modo offline — dados de referência"
-    st.caption(fonte)
+    _ts   = timestamp_ultima_atualizacao(chave_cache_mercado())
+    _hora = _ts.strftime("%H:%M")
+    if not df_titulos.empty:
+        st.caption(f"✅ Dados ao vivo — Tesouro Direto · carregados às **{_hora}** (atualiza a cada 2h)")
+    else:
+        st.caption("⚠️ Modo offline — usando dados de referência")
 
     # -----------------------------------------------------------------------
     # Helper: calcula todas as métricas de uma posição a partir dos inputs
@@ -104,7 +108,35 @@ def render():
             dv=dv, dc=dc, tc=tc, tm=tm, cupom=cupom,
             pu_c=pu_c, cpns_h=cpns_h, anos_tot=anos_tot, anos_res=anos_res,
             vf=vf, prazo_score=ps, posicao_score=poss, score=ps + poss,
-            taxa_pct=taxa_pct,
+            taxa_pct=taxa_pct, is_simples=False,
+        )
+
+    def _calcular_simples(titulo: str, tipo_asset: str, valor: float, taxa_pct: float,
+                           data_compra_str: str, vencimento_str: str):
+        """Cálculo por accrual para Selic, Pré-Fixado, CDB, LCI e LCA (sem pricing NTN-B)."""
+        dc = date.fromisoformat(data_compra_str)
+        dv = date.fromisoformat(vencimento_str)
+        if dc >= dv:
+            return None
+        tc     = taxa_pct / 100
+        hoje   = date.today()
+        dias_d = max(0, (hoje - dc).days)
+        anos_t = (dv - dc).days / 365
+        anos_r = max(1, round((dv - hoje).days / 365))
+        mam    = valor * (1 + tc) ** (dias_d / 365)
+        vf     = valor * (1 + tc) ** anos_t
+        ps     = min(60.0, 10.0 + anos_r * 7.0)
+        # Selic e bancários: sem risco de MaM → posicao_score pleno
+        # Prefixado: tem risco de taxa → posicao_score reduzido
+        pos_sc = 25.0 if tipo_asset == "pre" else 40.0
+        return dict(
+            res={"mam": mam, "variacao_dia": 0.0, "pu_hoje": 0.0, "quantidade": 1.0},
+            taxa_mkt_pct=taxa_pct, taxa_vda_pct=None,
+            dv=dv, dc=dc, tc=tc, tm=tc,
+            cupom=False, pu_c=valor, cpns_h=[],
+            anos_tot=anos_t, anos_res=anos_r,
+            vf=vf, prazo_score=ps, posicao_score=pos_sc, score=ps + pos_sc,
+            taxa_pct=taxa_pct, tipo_asset=tipo_asset, is_simples=True,
         )
 
     # -----------------------------------------------------------------------
@@ -120,15 +152,85 @@ def render():
 
     # ---- Formulário de adicionar posição (código inline, keys consistentes) ----
     def _render_form():
-        _fc = st.session_state.get("port_cat")
-        if _fc and _fc in CATEGORIAS_TITULOS and st.session_state.get("port_titulo") not in CATEGORIAS_TITULOS[_fc]:
-            st.session_state["port_titulo"] = CATEGORIAS_TITULOS[_fc][0]
+        _CAT_SELIC = sorted([k for k, v in TITULOS_BATALHA.items() if v.get("tipo") == "selic"])
+        _CAT_PRE   = sorted([k for k, v in TITULOS_BATALHA.items() if v.get("tipo") == "pre"])
+        _CATS_ALL  = {
+            **CATEGORIAS_TITULOS,
+            "Tesouro Selic":     _CAT_SELIC or ["Tesouro Selic 2031"],
+            "Tesouro Prefixado": _CAT_PRE   or ["Tesouro Prefixado 2029"],
+            "CDB": ["CDB"],
+            "LCI": ["LCI"],
+            "LCA": ["LCA"],
+        }
+        _TIPO_CAT = {
+            "IPCA+ Principal":            "ipca_mais",
+            "IPCA+ com Juros Semestrais": "ipca_mais",
+            "Tesouro RendA+":             "ipca_mais",
+            "Tesouro Educar+":            "ipca_mais",
+            "Tesouro Selic":              "selic",
+            "Tesouro Prefixado":          "pre",
+            "CDB":                        "cdb",
+            "LCI":                        "lci",
+            "LCA":                        "lca",
+        }
+        _DEFAULTS_TAXA = {
+            "IPCA+ Principal":            5.50,
+            "IPCA+ com Juros Semestrais": 5.50,
+            "Tesouro RendA+":             5.50,
+            "Tesouro Educar+":            5.50,
+            "Tesouro Selic":             13.25,
+            "Tesouro Prefixado":         13.50,
+            "CDB":                       12.50,
+            "LCI":                       11.00,
+            "LCA":                       10.80,
+        }
+        _TAXA_LABELS = {
+            "ipca_mais": "Taxa Real (% a.a.) — spread IPCA+",
+            "selic":     "Taxa Selic (% a.a.)",
+            "pre":       "Taxa Prefixada (% a.a.)",
+            "cdb":       "Rentabilidade CDB (% a.a.)",
+            "lci":       "Rentabilidade LCI (% a.a.)",
+            "lca":       "Rentabilidade LCA (% a.a.)",
+        }
+        _TAXA_HELP = {
+            "ipca_mais": "Spread real sobre o IPCA contratado na compra. Ex.: 7,50 → IPCA + 7,50% a.a.",
+            "selic":     "Taxa Selic equivalente anual esperada. Ex.: 13,25 para Selic atual.",
+            "pre":       "Taxa nominal prefixada contratada na compra. Ex.: 13,50% a.a.",
+            "cdb":       "Taxa nominal anual do CDB (pré-fixado) ou equivalente CDI. Ex.: 12,50.",
+            "lci":       "Taxa nominal anual da LCI — isenta de IR para pessoa física. Ex.: 11,00.",
+            "lca":       "Taxa nominal anual da LCA — isenta de IR para pessoa física. Ex.: 10,80.",
+        }
+
+        # Detecta mudança de categoria e redefine a taxa padrão automaticamente
+        _curr_cat = st.session_state.get("port_cat")
+        _prev_cat = st.session_state.get("_port_cat_prev")
+        if _curr_cat is not None and _curr_cat != _prev_cat:
+            st.session_state["port_taxa"] = _DEFAULTS_TAXA.get(_curr_cat, 5.50)
+        st.session_state["_port_cat_prev"] = _curr_cat
+
+        # Garante que port_cat é sempre uma categoria válida (evita KeyError se None ou inválido)
+        if st.session_state.get("port_cat") not in _CATS_ALL:
+            st.session_state["port_cat"] = list(_CATS_ALL.keys())[0]
+
+        _fc = st.session_state["port_cat"]
+        _titulos_fc = _CATS_ALL.get(_fc, [])
+        if not _titulos_fc:
+            _fc = next((k for k, v in _CATS_ALL.items() if v), list(_CATS_ALL.keys())[0])
+            st.session_state["port_cat"] = _fc
+            _titulos_fc = _CATS_ALL.get(_fc, [])
+        if st.session_state.get("port_titulo") not in _titulos_fc:
+            st.session_state["port_titulo"] = _titulos_fc[0] if _titulos_fc else None
 
         _fc1, _fc2 = st.columns([1, 2])
         with _fc1:
-            _pcat = st.selectbox("Categoria", list(CATEGORIAS_TITULOS.keys()), key="port_cat")
+            _pcat = st.selectbox("Categoria", list(_CATS_ALL.keys()), key="port_cat")
         with _fc2:
-            _ptit = st.selectbox("Título", CATEGORIAS_TITULOS[_pcat], key="port_titulo")
+            _ptit = st.selectbox("Título", _CATS_ALL[_pcat], key="port_titulo")
+
+        _tipo       = _TIPO_CAT.get(_pcat, "ipca_mais")
+        _is_simples = _tipo != "ipca_mais"
+        _taxa_lbl   = _TAXA_LABELS.get(_tipo, "Taxa (% a.a.)")
+        _taxa_help  = _TAXA_HELP.get(_tipo, "")
 
         _fc3, _fc4, _fc5 = st.columns([1.6, 1.2, 1.2])
         with _fc3:
@@ -138,8 +240,9 @@ def render():
             )
         with _fc4:
             _ptax = st.number_input(
-                "Taxa Contratada (% a.a. real)", min_value=1.0, max_value=15.0,
-                value=5.50, step=0.05, format="%.2f", key="port_taxa",
+                _taxa_lbl, min_value=0.5, max_value=30.0,
+                step=0.05, format="%.2f", key="port_taxa",
+                help=_taxa_help,
             )
         with _fc5:
             _pdat = st.date_input(
@@ -149,8 +252,22 @@ def render():
                 key="port_data",
             )
 
+        if _tipo in ("cdb", "lci", "lca"):
+            _pvenc_date = st.date_input(
+                "Data de Vencimento",
+                value=date.today() + timedelta(days=365 * 2),
+                min_value=date.today() + timedelta(days=31),
+                key="port_vencimento",
+            )
+        elif _is_simples:
+            _pvenc_date = TITULOS_BATALHA.get(_ptit, {}).get("vencimento", date(2031, 3, 1))
+
         if st.button("Adicionar ao portfólio", type="primary", key="port_btn"):
-            c = _calcular(_ptit, _pval, _ptax, _pdat.isoformat())
+            if _is_simples:
+                c = _calcular_simples(_ptit, _tipo, _pval, _ptax,
+                                      _pdat.isoformat(), _pvenc_date.isoformat())
+            else:
+                c = _calcular(_ptit, _pval, _ptax, _pdat.isoformat())
             if c is None:
                 st.error("Data de compra deve ser anterior ao vencimento do título.")
             else:
@@ -164,6 +281,7 @@ def render():
                         data_compra=_pdat.isoformat(),
                         mam_cache=c["res"]["mam"], carrego_cache=c["vf"],
                         vencimento=c["dv"].isoformat(), anos=c["anos_res"],
+                        tipo_asset=_tipo,
                     ))
                     st.session_state["_analysis_pos_idx"] = len(st.session_state["_portfolio"]) - 1
                     st.rerun()
@@ -196,7 +314,12 @@ def render():
         # Atualiza caches com dados ao vivo para garantir consistência com a análise detalhada
         _calcs_port = []
         for p in st.session_state["_portfolio"]:
-            c = _calcular(p["titulo"], p["valor"], p["taxa"], p["data_compra"])
+            _ta = p.get("tipo_asset", "ipca_mais")
+            if _ta == "ipca_mais":
+                c = _calcular(p["titulo"], p["valor"], p["taxa"], p["data_compra"])
+            else:
+                c = _calcular_simples(p["titulo"], _ta, p["valor"], p["taxa"],
+                                      p["data_compra"], p["vencimento"])
             if c is not None:
                 p["mam_cache"]     = c["res"]["mam"]
                 p["carrego_cache"] = c["vf"]
@@ -209,8 +332,9 @@ def render():
         total_carrego = sum(p["carrego_cache"] for p in portfolio)
         var_total     = (total_mam - total_cap) / total_cap * 100
 
-        _scores = [c["score"] for c in _calcs_port if c is not None]
-        score_medio = sum(_scores) / len(_scores) if _scores else 0.0
+        _score_cap = [(c["score"], portfolio[i]["valor"]) for i, c in enumerate(_calcs_port) if c is not None]
+        _tot_sc = sum(v for _, v in _score_cap)
+        score_medio = sum(s * v for s, v in _score_cap) / _tot_sc if _tot_sc > 0 else 0.0
         score_label = "🟢 Sereno" if score_medio >= 70 else "🟡 Atenção" if score_medio >= 40 else "🔴 Risco"
 
         _mc1, _mc2, _mc3, _mc4 = st.columns(4)
@@ -298,6 +422,12 @@ def render():
             "dash_choque_stress":      st.session_state.get("dash_choque_stress", 2.0),
             "_portfolio":              [],
             "_analysis_pos_idx":       0,
+            "port_cat":                st.session_state.get("port_cat"),
+            "port_titulo":             st.session_state.get("port_titulo"),
+            "port_valor":              st.session_state.get("port_valor", 10_000.0),
+            "port_taxa":               st.session_state.get("port_taxa", 5.50),
+            "port_data":               st.session_state.get("port_data"),
+            "port_vencimento":         st.session_state.get("port_vencimento"),
         })
         return
 
@@ -319,8 +449,13 @@ def render():
         key="_analysis_pos_idx",
     )
 
-    pos  = portfolio[sel_idx]
-    calc = _calcular(pos["titulo"], pos["valor"], pos["taxa"], pos["data_compra"])
+    pos       = portfolio[sel_idx]
+    _tipo_sel = pos.get("tipo_asset", "ipca_mais")
+    if _tipo_sel == "ipca_mais":
+        calc = _calcular(pos["titulo"], pos["valor"], pos["taxa"], pos["data_compra"])
+    else:
+        calc = _calcular_simples(pos["titulo"], _tipo_sel, pos["valor"], pos["taxa"],
+                                  pos["data_compra"], pos["vencimento"])
 
     if calc is None:
         st.error("⛔ Não foi possível calcular esta posição. Verifique se a data de compra é válida.")
@@ -379,54 +514,202 @@ def render():
                 icon="🔴",
             )
 
-        # KPI cards
-        col1, col2, col3 = st.columns(3)
-        variacao = resultado["variacao_dia"]
+        if calc.get("is_simples"):
+            # ---- Vista simplificada para Selic, Pré-Fixado, CDB, LCI, LCA ----
+            _tipo_labels_pos = {
+                "selic": "Tesouro Selic — Pós-Fixado",
+                "pre":   "Tesouro Pré-Fixado",
+                "cdb":   "CDB — Crédito Privado",
+                "lci":   "LCI — Crédito Privado (isento IR)",
+                "lca":   "LCA — Crédito Privado (isento IR)",
+            }
+            st.info(
+                f"**{_tipo_labels_pos.get(_tipo_sel, 'Renda Fixa')}** — "
+                "este ativo não possui marcação a mercado diária. "
+                "O valor exibido é o rendimento acumulado pela taxa contratada.",
+                icon="ℹ️",
+            )
+            _sc1, _sc2, _sc3 = st.columns(3)
+            with _sc1:
+                st.metric("Capital Investido", formatar_brl(valor_investido),
+                          f"Comprado em {data_compra.strftime('%d/%m/%Y')}")
+            with _sc2:
+                _acum_pct = (resultado["mam"] / valor_investido - 1) * 100
+                st.metric("Valor Atual (accrual)", formatar_brl(resultado["mam"]),
+                          f"+{_acum_pct:.2f}% acumulado", delta_color="normal")
+            with _sc3:
+                _venc_pct = (valor_vencimento / valor_investido - 1) * 100
+                st.metric("No Vencimento", formatar_brl(valor_vencimento),
+                          f"+{_venc_pct:.1f}% acumulado nominal", delta_color="normal")
 
-        with col1:
-            st.metric(
-                "Variação do Dia (MaM)", f"{variacao:+.2f}%", f"{variacao:.2f}%",
-                delta_color="normal",
-                help="Oscilação estimada do PU de mercado hoje vs. ontem",
-            )
-
-        with col2:
-            delta_vs = resultado["mam"] - valor_investido
-            delta_str = (
-                f"-{formatar_brl(abs(delta_vs))} vs. capital"
-                if delta_vs < 0
-                else f"+{formatar_brl(delta_vs)} vs. capital"
-            )
-            st.metric(
-                "💸  Resgate Antecipado Hoje", formatar_brl(resultado["mam"]),
-                delta_str, delta_color="normal",
-                help="Valor que você receberia se vender hoje — sujeito à MaM",
-            )
-            if taxa_venda_pct and taxa_venda_pct > taxa_mercado_pct:
-                spread_bps   = (taxa_venda_pct - taxa_mercado_pct) * 100
-                pu_venda_est = pu_ntnb(vna, taxa_venda_pct / 100, date.today(), data_vencimento, cpns_hoje)
-                spread_rs    = (resultado["pu_hoje"] - pu_venda_est) * resultado["quantidade"]
-                st.caption(
-                    f"⚠️ Spread bid-ask: {spread_bps:.0f} bps — impacto estimado: "
-                    f"{formatar_brl(spread_rs)} a menos no resgate real."
+            if _tipo_sel in ("lci", "lca"):
+                st.success(
+                    "✅ **Isenção de IR** — LCI e LCA são isentos de Imposto de Renda "
+                    "para pessoa física em qualquer prazo."
                 )
 
-        with col3:
-            ganho_real_pct = (valor_vencimento / valor_investido - 1) * 100
-            if "RendA+" in titulo_sel:
-                lbl = "🏦  Capital Acumulado (RendA+)"
-            elif "Educar+" in titulo_sel:
-                lbl = "🎓  Capital Acumulado (Educar+)"
-            else:
-                lbl = "🛡️  Resgate no Vencimento"
-            st.metric(lbl, formatar_brl(valor_vencimento),
-                      f"+{ganho_real_pct:.1f}% real acumulado", delta_color="normal")
+            if _tipo_sel in ("cdb", "lci", "lca"):
+                st.info(
+                    "🛡️ **Garantia FGC:** CDB, LCI e LCA são cobertos pelo Fundo Garantidor "
+                    "de Créditos até **R$ 250 mil por CPF por instituição**. Valores acima desse "
+                    "limite têm risco de crédito do emissor bancário.\n\n"
+                    "Títulos do **Tesouro Direto** têm risco soberano (governo federal) — "
+                    "sem limite de cobertura e considerado o menor risco de crédito do Brasil.",
+                    icon="ℹ️",
+                )
 
-        # Banner comportamental + saúde
-        col_b, col_g = st.columns([1.8, 1])
-        with col_b:
-            if resultado["mam"] < valor_investido:
-                st.markdown("""
+            col_sg, col_sc = st.columns([2.5, 1])
+            with col_sg:
+                st.markdown("---")
+                st.markdown("#### 📊  Projeção de Crescimento")
+                # Gera pontos mensais do hoje até o vencimento
+                import calendar as _cal
+                _d, _meses_x, _meses_y = date.today(), [], []
+                while _d <= data_vencimento:
+                    _dias = (_d - date.today()).days
+                    _meses_x.append(_d.strftime("%b/%Y"))
+                    _meses_y.append(valor_investido * (1 + taxa_contratada) ** (_dias / 365))
+                    _nm = _d.month % 12 + 1
+                    _ny = _d.year + (_d.month // 12)
+                    _d  = date(_ny, _nm, min(_d.day, _cal.monthrange(_ny, _nm)[1]))
+                # Garante que o vencimento está incluído
+                _dias_venc = (data_vencimento - date.today()).days
+                _meses_x.append(data_vencimento.strftime("%b/%Y"))
+                _meses_y.append(valor_investido * (1 + taxa_contratada) ** (_dias_venc / 365))
+                _cap_line  = [valor_investido] * len(_meses_x)
+                _y_pad     = (max(_meses_y) - valor_investido) * 0.15
+                fig_proj   = go.Figure()
+                fig_proj.add_trace(go.Scatter(
+                    x=_meses_x, y=_cap_line,
+                    mode="lines", name="Capital investido",
+                    line=dict(color="#90caf9", width=1.5, dash="dash"),
+                    hovertemplate="Capital: R$ %{y:,.2f}<extra></extra>",
+                ))
+                fig_proj.add_trace(go.Scatter(
+                    x=_meses_x, y=_meses_y,
+                    mode="lines", name="Valor projetado",
+                    line=dict(color="#a5d6a7", width=2.5),
+                    fill="tonexty", fillcolor="rgba(165,214,167,0.12)",
+                    hovertemplate="%{x}<br><b>R$ %{y:,.2f}</b><extra></extra>",
+                ))
+                fig_proj.update_layout(
+                    margin=dict(t=10, b=30, l=10, r=10),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font_color="#e0e0e0",
+                    yaxis=dict(
+                        tickprefix="R$ ", separatethousands=True,
+                        range=[valor_investido - _y_pad, max(_meses_y) + _y_pad],
+                        gridcolor="rgba(255,255,255,0.06)",
+                    ),
+                    xaxis=dict(gridcolor="rgba(255,255,255,0.04)", tickangle=-30),
+                    legend=dict(orientation="h", y=-0.25, x=0),
+                    height=290,
+                )
+                st.plotly_chart(fig_proj, use_container_width=True)
+            with col_sc:
+                st.metric(
+                    "Saúde da Posição", "",
+                    help=(
+                        f"**⏳ Prazo ({prazo_score:.0f}/60 pts):** quanto mais tempo restante, "
+                        "mais fácil esperar.\n\n"
+                        f"**📊 Posição ({posicao_score:.0f}/40 pts)**\n\n"
+                        "**70–100 🟢 Saudável · 40–69 🟡 Atenção · 0–39 🔴 Risco**"
+                    ),
+                )
+                st.plotly_chart(grafico_score(score), use_container_width=True)
+
+            st.info(
+                f"📅 **Vencimento:** {data_vencimento.strftime('%d/%m/%Y')}  ·  "
+                f"**Anos restantes:** {anos_restantes}  ·  "
+                f"**Taxa:** {taxa_contratada_pct:.2f}% a.a.",
+            )
+
+        else:
+            # ---- Vista completa para Tesouro IPCA+/RendA+/Educar+ ----
+            # KPI cards
+            col1, col2, col3 = st.columns(3)
+            variacao = resultado["variacao_dia"]
+
+            with col1:
+                st.metric(
+                    "Variação do Dia (MaM)", f"{variacao:+.2f}%", f"{variacao:.2f}%",
+                    delta_color="normal",
+                    help="Oscilação estimada do PU de mercado hoje vs. ontem",
+                )
+
+            with col2:
+                delta_vs = resultado["mam"] - valor_investido
+                delta_str = (
+                    f"-{formatar_brl(abs(delta_vs))} vs. capital"
+                    if delta_vs < 0
+                    else f"+{formatar_brl(delta_vs)} vs. capital"
+                )
+                st.metric(
+                    "💸  Resgate Antecipado Hoje", formatar_brl(resultado["mam"]),
+                    delta_str, delta_color="normal",
+                    help="Valor que você receberia se vender hoje — sujeito à MaM",
+                )
+                if taxa_venda_pct and taxa_venda_pct > taxa_mercado_pct:
+                    spread_bps   = (taxa_venda_pct - taxa_mercado_pct) * 100
+                    pu_venda_est = pu_ntnb(vna, taxa_venda_pct / 100, date.today(), data_vencimento, cpns_hoje)
+                    spread_rs    = (resultado["pu_hoje"] - pu_venda_est) * resultado["quantidade"]
+                    st.caption(
+                        f"⚠️ Spread bid-ask: {spread_bps:.0f} bps — impacto estimado: "
+                        f"{formatar_brl(spread_rs)} a menos no resgate real."
+                    )
+
+            with col3:
+                ganho_real_pct = (valor_vencimento / valor_investido - 1) * 100
+                if "RendA+" in titulo_sel:
+                    lbl = "🏦  Capital Acumulado (RendA+)"
+                elif "Educar+" in titulo_sel:
+                    lbl = "🎓  Capital Acumulado (Educar+)"
+                else:
+                    lbl = "🛡️  Resgate no Vencimento"
+                st.metric(lbl, formatar_brl(valor_vencimento),
+                          f"+{ganho_real_pct:.1f}% real acumulado", delta_color="normal")
+
+            # ---- Duration Modificada (diferença central bilateral) ----
+            st.markdown("---")
+            _tm_up  = taxa_mercado + 0.01
+            _tm_dn  = max(0.001, taxa_mercado - 0.01)
+            _res_up = metricas_carteira(
+                valor_investido=valor_investido, pu_na_compra=pu_compra,
+                taxa_real_contratada=taxa_contratada, taxa_real_mercado=_tm_up,
+                vna=vna, data_hoje=date.today(), data_vencimento=data_vencimento,
+                datas_cupom=cpns_hoje,
+            )
+            _res_dn = metricas_carteira(
+                valor_investido=valor_investido, pu_na_compra=pu_compra,
+                taxa_real_contratada=taxa_contratada, taxa_real_mercado=_tm_dn,
+                vna=vna, data_hoje=date.today(), data_vencimento=data_vencimento,
+                datas_cupom=cpns_hoje,
+            )
+            _dur_mod = (
+                -((_res_up["mam"] - _res_dn["mam"]) / (2 * resultado["mam"] * 0.01))
+                if resultado["mam"] > 0 else 0.0
+            )
+
+            _col_dur, _ = st.columns([1, 2])
+            with _col_dur:
+                st.metric(
+                    "📐 Duration Modificada",
+                    f"{_dur_mod:.1f} anos",
+                    delta_color="off",
+                    help=(
+                        "Estima quantos % o preço muda para cada 1 p.p. de variação na taxa. "
+                        "Duration de 5 anos → subir 1 p.p. reduz o resgate ~5%.\n\n"
+                        "Títulos mais longos têm duration maior — mais sensíveis a choques de taxa. "
+                        "Para simular diferentes magnitudes de choque, use a aba **Simulações**."
+                    ),
+                )
+
+            # Banner comportamental + saúde
+            col_b, col_g = st.columns([1.8, 1])
+            with col_b:
+                if resultado["mam"] < valor_investido:
+                    st.markdown("""
         <div class="alerta-mercado">
             ⚠️ <strong>Por que minha carteira aparece "negativa"?</strong><br>
             <small>A Marcação a Mercado reflete o preço que o mercado pagaria <em>agora</em>.
@@ -434,55 +717,55 @@ def render():
             Se você <strong>não vender antes</strong>, receberá exatamente a taxa contratada,
             corrigida pelo IPCA.</small>
         </div>""", unsafe_allow_html=True)
-            else:
-                st.markdown("""
+                else:
+                    st.markdown("""
         <div class="badge-seguranca">
             ✅ <strong>Sua posição está acima do capital investido.</strong><br>
             <small>As taxas caíram desde sua compra, valorizando o título. Você pode resgatar
             antecipadamente com ganho — ou manter até o vencimento para receber a taxa integral.</small>
         </div>""", unsafe_allow_html=True)
 
-        with col_g:
-            st.metric(
-                "Saúde da Posição", "",
-                help=(
-                    f"**⏳ Prazo ({prazo_score:.0f}/60 pts):** quanto mais tempo restante, "
-                    "mais fácil esperar.\n\n"
-                    f"**📊 Posição ({posicao_score:.0f}/40 pts):** quanto mais próximo do capital "
-                    "investido estiver o MaM, menor o desconforto.\n\n"
-                    "**70–100 🟢 Saudável · 40–69 🟡 Atenção · 0–39 🔴 Risco**"
-                ),
-            )
-            st.plotly_chart(grafico_score(score), use_container_width=True)
+            with col_g:
+                st.metric(
+                    "Saúde da Posição", "",
+                    help=(
+                        f"**⏳ Prazo ({prazo_score:.0f}/60 pts):** quanto mais tempo restante, "
+                        "mais fácil esperar.\n\n"
+                        f"**📊 Posição ({posicao_score:.0f}/40 pts):** quanto mais próximo do capital "
+                        "investido estiver o MaM, menor o desconforto.\n\n"
+                        "**70–100 🟢 Saudável · 40–69 🟡 Atenção · 0–39 🔴 Risco**"
+                    ),
+                )
+                st.plotly_chart(grafico_score(score), use_container_width=True)
 
-        # Gráfico do Paradoxo
-        st.markdown("---")
-        st.markdown("#### 📈  O Gráfico do Paradoxo")
-        col_graf, col_leg = st.columns([3, 1])
+            # Gráfico do Paradoxo
+            st.markdown("---")
+            st.markdown("#### 📈  O Gráfico do Paradoxo")
+            col_graf, col_leg = st.columns([3, 1])
 
-        with st.spinner("Calculando série temporal..."):
-            df_paradoxo = _serie_cached(
-                vna, taxa_contratada, taxa_mercado,
-                data_compra, data_vencimento, resultado["quantidade"], tem_cupom,
-            )
+            with st.spinner("Calculando série temporal..."):
+                df_paradoxo = _serie_cached(
+                    vna, taxa_contratada, taxa_mercado,
+                    data_compra, data_vencimento, resultado["quantidade"], tem_cupom,
+                )
 
-        with col_graf:
-            st.plotly_chart(
-                grafico_paradoxo(
-                    df_paradoxo, data_compra=data_compra,
-                    data_vencimento=data_vencimento,
-                    datas_cupom=cpns_hoje if tem_cupom else None,
-                ),
-                use_container_width=True,
-            )
+            with col_graf:
+                st.plotly_chart(
+                    grafico_paradoxo(
+                        df_paradoxo, data_compra=data_compra,
+                        data_vencimento=data_vencimento,
+                        datas_cupom=cpns_hoje if tem_cupom else None,
+                    ),
+                    use_container_width=True,
+                )
 
-        with col_leg:
-            st.markdown("**O que estou vendo?**")
-            padrao_c = (
-                "Oscila em **dente de serra** a cada semestre — reflexo dos cupons."
-                if tem_cupom else "Curva **exponencial lisa** — sem cupons."
-            )
-            st.markdown(f"""
+            with col_leg:
+                st.markdown("**O que estou vendo?**")
+                padrao_c = (
+                    "Oscila em **dente de serra** a cada semestre — reflexo dos cupons."
+                    if tem_cupom else "Curva **exponencial lisa** — sem cupons."
+                )
+                st.markdown(f"""
 **🔴 MaM** — preço de mercado dia a dia.
 É o que você recebe **se vender hoje**.
 
@@ -497,77 +780,78 @@ def render():
 ---
 
 As duas linhas **convergem no vencimento.**
-            """)
+                """)
 
-        st.info(
-            f"📅 **Vencimento:** {data_vencimento.strftime('%d/%m/%Y')}  ·  "
-            f"**Anos restantes:** {anos_restantes}  ·  "
-            f"**VNA:** {formatar_brl(vna)}  ·  "
-            f"**Taxa mercado:** {taxa_mercado_pct:.2f}% a.a.  ·  "
-            f"**Qtd:** {resultado['quantidade']:.4f} títulos",
-        )
+            st.info(
+                f"📅 **Vencimento:** {data_vencimento.strftime('%d/%m/%Y')}  ·  "
+                f"**Anos restantes:** {anos_restantes}  ·  "
+                f"**VNA:** {formatar_brl(vna)}  ·  "
+                f"**Taxa mercado:** {taxa_mercado_pct:.2f}% a.a.  ·  "
+                f"**Qtd:** {resultado['quantidade']:.4f} títulos",
+            )
 
     # =========================== ABA 2: SIMULAÇÕES ===========================
     with tab_sim:
-        # Stress Test
-        st.markdown("#### ⚡  Choque de Taxa — Adverso e Favorável")
-        st.caption("O carrego permanece inalterado em ambos os cenários.")
+        # Stress Test — apenas para IPCA+ (usa pricing NTN-B)
+        if not calc.get("is_simples"):
+            st.markdown("#### ⚡  Choque de Taxa — Adverso e Favorável")
+            st.caption("O carrego permanece inalterado em ambos os cenários.")
 
-        choque_stress = st.slider(
-            "Magnitude do Choque (p.p.)",
-            min_value=0.0, max_value=5.0, value=2.0, step=0.25,
-            format="%.2f p.p.", key="dash_choque_stress",
-        )
+            choque_stress = st.slider(
+                "Magnitude do Choque (p.p.)",
+                min_value=0.0, max_value=5.0, value=2.0, step=0.25,
+                format="%.2f p.p.", key="dash_choque_stress",
+            )
 
-        taxa_adv = taxa_mercado + choque_stress / 100
-        res_adv  = metricas_carteira(
-            valor_investido=valor_investido, pu_na_compra=pu_compra,
-            taxa_real_contratada=taxa_contratada, taxa_real_mercado=taxa_adv,
-            vna=vna, data_hoje=date.today(), data_vencimento=data_vencimento,
-            datas_cupom=cpns_hoje,
-        )
-        taxa_fav = max(0.001, taxa_mercado - choque_stress / 100)
-        res_fav  = metricas_carteira(
-            valor_investido=valor_investido, pu_na_compra=pu_compra,
-            taxa_real_contratada=taxa_contratada, taxa_real_mercado=taxa_fav,
-            vna=vna, data_hoje=date.today(), data_vencimento=data_vencimento,
-            datas_cupom=cpns_hoje,
-        )
-        tombo_adv     = res_adv["mam"] - resultado["mam"]
-        tombo_adv_pct = (tombo_adv / resultado["mam"] * 100) if resultado["mam"] > 0 else 0.0
-        ganho_fav     = res_fav["mam"] - resultado["mam"]
-        ganho_fav_pct = (ganho_fav / resultado["mam"] * 100) if resultado["mam"] > 0 else 0.0
+            taxa_adv = taxa_mercado + choque_stress / 100
+            res_adv  = metricas_carteira(
+                valor_investido=valor_investido, pu_na_compra=pu_compra,
+                taxa_real_contratada=taxa_contratada, taxa_real_mercado=taxa_adv,
+                vna=vna, data_hoje=date.today(), data_vencimento=data_vencimento,
+                datas_cupom=cpns_hoje,
+            )
+            taxa_fav = max(0.001, taxa_mercado - choque_stress / 100)
+            res_fav  = metricas_carteira(
+                valor_investido=valor_investido, pu_na_compra=pu_compra,
+                taxa_real_contratada=taxa_contratada, taxa_real_mercado=taxa_fav,
+                vna=vna, data_hoje=date.today(), data_vencimento=data_vencimento,
+                datas_cupom=cpns_hoje,
+            )
+            tombo_adv     = res_adv["mam"] - resultado["mam"]
+            tombo_adv_pct = (tombo_adv / resultado["mam"] * 100) if resultado["mam"] > 0 else 0.0
+            ganho_fav     = res_fav["mam"] - resultado["mam"]
+            ganho_fav_pct = (ganho_fav / resultado["mam"] * 100) if resultado["mam"] > 0 else 0.0
 
-        st.markdown("**🔴 Cenário Adverso — Taxa Sobe**")
-        ca1, ca2, ca3 = st.columns(3)
-        with ca1:
-            st.metric("Taxa de Mercado", f"{taxa_adv*100:.2f}% a.a.",
-                      f"+{choque_stress:.2f} p.p.", delta_color="inverse")
-        with ca2:
-            st.metric("Resgate Antecipado", formatar_brl(res_adv["mam"]),
-                      formatar_brl(tombo_adv), delta_color="inverse")
-        with ca3:
-            st.metric("Impacto", f"{tombo_adv_pct:+.1f}%")
-            st.caption(f"🛡️ Carrego no vencimento: **{formatar_brl(valor_vencimento)}** — inalterado")
+            st.markdown("**🔴 Cenário Adverso — Taxa Sobe**")
+            ca1, ca2, ca3 = st.columns(3)
+            with ca1:
+                st.metric("Taxa de Mercado", f"{taxa_adv*100:.2f}% a.a.",
+                          f"+{choque_stress:.2f} p.p.", delta_color="inverse")
+            with ca2:
+                st.metric("Resgate Antecipado", formatar_brl(res_adv["mam"]),
+                          formatar_brl(tombo_adv), delta_color="inverse")
+            with ca3:
+                st.metric("Impacto", f"{tombo_adv_pct:+.1f}%")
+                st.caption(f"🛡️ Carrego no vencimento: **{formatar_brl(valor_vencimento)}** — inalterado")
 
-        st.markdown("""<div class="alerta-mercado" style="margin-bottom:0.8rem">
+            st.markdown("""<div class="alerta-mercado" style="margin-bottom:0.8rem">
 🧠 <strong>Este tombo é real — mas temporário.</strong>
 Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamente.
 </div>""", unsafe_allow_html=True)
 
-        st.markdown("**🟢 Cenário Favorável — Taxa Cai**")
-        cf1, cf2, cf3 = st.columns(3)
-        with cf1:
-            st.metric("Taxa de Mercado", f"{taxa_fav*100:.2f}% a.a.",
-                      f"-{choque_stress:.2f} p.p.", delta_color="normal")
-        with cf2:
-            st.metric("Resgate Antecipado", formatar_brl(res_fav["mam"]),
-                      f"+{formatar_brl(ganho_fav)}", delta_color="normal")
-        with cf3:
-            st.metric("Ganho de Capital", f"{ganho_fav_pct:+.1f}%",
-                      "Vender agora captura este ganho", delta_color="normal")
+            st.markdown("**🟢 Cenário Favorável — Taxa Cai**")
+            cf1, cf2, cf3 = st.columns(3)
+            with cf1:
+                st.metric("Taxa de Mercado", f"{taxa_fav*100:.2f}% a.a.",
+                          f"-{choque_stress:.2f} p.p.", delta_color="normal")
+            with cf2:
+                st.metric("Resgate Antecipado", formatar_brl(res_fav["mam"]),
+                          f"+{formatar_brl(ganho_fav)}", delta_color="normal")
+            with cf3:
+                st.metric("Ganho de Capital", f"{ganho_fav_pct:+.1f}%",
+                          "Vender agora captura este ganho", delta_color="normal")
 
-        st.markdown("""<div class="badge-seguranca">
+            st.markdown("""<div class="badge-seguranca">
 💡 <strong>Oportunidade de MaM:</strong> Quando taxas caem, você pode vender com ganho
 — ou manter e receber a taxa contratada integral.
 </div>""", unsafe_allow_html=True)
@@ -626,7 +910,20 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
                                             max_value=25.0,
                                             value=float(round(taxa_mercado_pct, 2)),
                                             step=0.1, format="%.2f", key="venda_reinv")
-            ir_venda     = st.checkbox("Considerar IR na venda", value=True, key="venda_ir")
+            _ir_default  = _tipo_sel not in ("lci", "lca")
+            ir_venda     = st.checkbox("Considerar IR na venda", value=_ir_default, key="venda_ir")
+            if _tipo_sel in ("lci", "lca"):
+                st.caption("LCI/LCA são isentos de IR para pessoa física.")
+            if _tipo_sel == "ipca_mais":
+                ipca_cen_b = st.number_input(
+                    "IPCA estimado — Cenário B (% a.a.)",
+                    min_value=0.5, max_value=20.0, value=5.0, step=0.1, format="%.1f",
+                    help="IPCA médio anual estimado para o período de aguardo. "
+                         "Afeta apenas o valor nominal do Cenário B — o ganho real travado não muda.",
+                    key="venda_ipca_b",
+                )
+            else:
+                ipca_cen_b = 0.0
 
         lucro_v = max(0.0, mam_input - valor_investido)
         if ir_venda:
@@ -636,9 +933,28 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
         else:
             ir_dev, aliq_ir_v = 0.0, 0.0
 
-        liq_venda     = mam_input - ir_dev
-        val_reinvest  = liq_venda * (1 + taxa_reinv / 100) ** anos_venda
-        val_aguardar  = valor_investido * (1 + taxa_contratada) ** anos_venda * (1.05 ** anos_venda)
+        liq_venda      = mam_input - ir_dev
+        _lucro_reinv   = liq_venda * (1 + taxa_reinv / 100) ** anos_venda - liq_venda
+        if ir_venda:
+            _aliq_reinv  = aliquota_ir_renda_fixa(anos_venda)
+            _ir_reinv    = max(0.0, _lucro_reinv) * _aliq_reinv
+        else:
+            _aliq_reinv, _ir_reinv = 0.0, 0.0
+        val_reinvest   = liq_venda + _lucro_reinv - _ir_reinv
+
+        # Cenário B: carrego bruto, depois desconta IR pelo prazo total desde a compra
+        # Para IPCA+ multiplica pelo IPCA inserido pelo usuário; demais ativos já embutem inflação na taxa nominal
+        _ipca_b       = (1 + ipca_cen_b / 100) if _tipo_sel == "ipca_mais" else 1.0
+        vf_bruto_b    = valor_investido * (1 + taxa_contratada) ** anos_venda * (_ipca_b ** anos_venda)
+        if ir_venda:
+            dias_b        = (date.today() - data_compra).days + int(anos_venda * 365)
+            aliq_ir_b     = aliquota_ir_renda_fixa(dias_b / 365)
+            lucro_b       = max(0.0, vf_bruto_b - valor_investido)
+            val_aguardar  = vf_bruto_b - lucro_b * aliq_ir_b
+        else:
+            val_aguardar  = vf_bruto_b
+            aliq_ir_b     = 0.0
+
         diferenca     = val_reinvest - val_aguardar
 
         st.markdown(f"**Comparação: vender agora vs. aguardar {anos_venda} ano(s)**")
@@ -648,32 +964,48 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
                       f"Líquido: {formatar_brl(liq_venda)} → {taxa_reinv:.1f}% a.a.",
                       delta_color="normal" if diferenca >= 0 else "inverse")
         with cv_c2:
+            ir_b_str    = f" · IR {aliq_ir_b*100:.0f}%" if ir_venda else " · sem IR"
+            _b_taxa_str = (f"{taxa_contratada_pct:.2f}% real + IPCA {ipca_cen_b:.1f}% est."
+                           if _tipo_sel == "ipca_mais"
+                           else f"{taxa_contratada_pct:.2f}% a.a. nominal")
             st.metric("Cenário B — Aguardar (carrego)", formatar_brl(val_aguardar),
-                      f"{taxa_contratada_pct:.2f}% real + IPCA 5% aprox.", delta_color="off")
+                      f"{_b_taxa_str}{ir_b_str}", delta_color="off")
         with cv_c3:
             st.metric("Diferença A−B", formatar_brl(diferenca),
                       "Vender compensa" if diferenca > 0 else "Aguardar compensa",
                       delta_color="normal" if diferenca > 0 else "inverse")
 
-        if ir_dev > 0:
-            st.caption(f"IR estimado: {formatar_brl(ir_dev)} ({aliq_ir_v*100:.1f}% sobre lucro de {formatar_brl(lucro_v)}).")
-        st.caption("⚠️ IPCA do Cenário B aproximado em 5% a.a.")
+        if ir_venda:
+            st.caption(
+                f"IR Cenário A: venda {formatar_brl(ir_dev)} ({aliq_ir_v*100:.0f}%) "
+                f"+ reinvest. {formatar_brl(_ir_reinv)} ({_aliq_reinv*100:.0f}%) — "
+                f"IR Cenário B: {aliq_ir_b*100:.0f}% sobre lucro total (prazo desde a compra)."
+            )
 
     # =========================== ABA 3: PORTFÓLIO ============================
     with tab_port:
         st.caption("Visão estatística de toda a carteira — independente da posição selecionada acima.")
 
-        _tipo_map  = {"selic": "Pós-Fixado (Selic)", "pre": "Pré-Fixado", "ipca_mais": "IPCA+/RendA+/Educar+"}
-        _cor_tipo  = {"Pós-Fixado (Selic)": "#4fc3f7", "Pré-Fixado": "#ef9a9a", "IPCA+/RendA+/Educar+": "#a5d6a7"}
+        _tipo_map  = {
+            "selic":     "Pós-Fixado (Selic)",
+            "pre":       "Pré-Fixado",
+            "ipca_mais": "IPCA+/RendA+/Educar+",
+            "cdb":       "CDB",
+            "lci":       "LCI",
+            "lca":       "LCA",
+        }
+        _cor_tipo  = {
+            "Pós-Fixado (Selic)": "#4fc3f7", "Pré-Fixado": "#ef9a9a",
+            "IPCA+/RendA+/Educar+": "#a5d6a7", "CDB": "#ce93d8",
+            "LCI": "#fff176", "LCA": "#ffcc80",
+        }
 
-        # Detecta tipo de cada posição usando TITULOS_CONFIG
         _port_stats = []
         for i, p in enumerate(_calcs_port):
             if p is None:
                 continue
-            pos_p = portfolio[i]
-            cfg   = TITULOS_BATALHA.get(pos_p["titulo"], {})
-            tipo  = cfg.get("tipo", "ipca_mais")
+            pos_p      = portfolio[i]
+            tipo       = pos_p.get("tipo_asset", "ipca_mais")
             tipo_label = _tipo_map.get(tipo, "IPCA+/RendA+/Educar+")
             _port_stats.append({
                 "nome":       pos_p["titulo"].replace("Tesouro ", ""),
@@ -707,6 +1039,39 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
             with pm3:
                 lbl_s = "🟢 Serena" if score_pond >= 70 else "🟡 Atenção" if score_pond >= 40 else "🔴 Risco"
                 st.metric("Saúde Ponderada", f"{score_pond:.0f}/100", lbl_s, delta_color="off")
+
+            # ---- Alertas de concentração ----
+            _por_tipo_cap: dict[str, float] = {}
+            for s in _port_stats:
+                _por_tipo_cap[s["tipo"]] = _por_tipo_cap.get(s["tipo"], 0.0) + s["capital"]
+
+            _tipo_dominante = max(_por_tipo_cap, key=_por_tipo_cap.get)
+            _pct_dominante  = _por_tipo_cap[_tipo_dominante] / total_cap * 100
+
+            _rec_diversificar = {
+                "IPCA+/RendA+/Educar+": "Tesouro Selic e Pré-Fixado",
+                "Pós-Fixado (Selic)":   "IPCA+ e Pré-Fixado",
+                "Pré-Fixado":           "IPCA+ e Tesouro Selic",
+                "CDB": "Tesouro Direto e LCI/LCA para diversificar entre emissores",
+                "LCI": "Tesouro Direto e CDB para diversificar entre emissores",
+                "LCA": "Tesouro Direto e CDB para diversificar entre emissores",
+            }
+            _rec = _rec_diversificar.get(_tipo_dominante, "outros tipos de renda fixa")
+
+            if _pct_dominante >= 90:
+                st.error(
+                    f"🔴 **Concentração crítica:** {_pct_dominante:.0f}% do portfólio está em "
+                    f"**{_tipo_dominante}**. Considere diversificar em **{_rec}** "
+                    f"para reduzir o risco de taxa e de reinvestimento.",
+                    icon="⚠️",
+                )
+            elif _pct_dominante >= 70:
+                st.warning(
+                    f"🟡 **Alta concentração:** {_pct_dominante:.0f}% do portfólio está em "
+                    f"**{_tipo_dominante}**. Diversificar em **{_rec}** reduz a exposição a "
+                    f"cenários adversos específicos de cada classe.",
+                    icon="⚠️",
+                )
 
             st.markdown("---")
 
@@ -804,29 +1169,32 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
     with tab_util:
         # Custódia B3
         st.markdown("#### 🏦  Taxa de Custódia B3")
-        descontar_custodia = st.checkbox(
-            "Simular impacto da taxa de custódia B3 (0,20% a.a.)",
-            value=False, key="dash_descontar_custodia",
-        )
-        if descontar_custodia:
-            is_selic = "Selic" in titulo_sel or "Reserva" in titulo_sel
-            if is_selic and valor_investido <= 10_000.0:
-                st.success(
-                    "**Isenção aplicada:** Tesouro Selic/Reserva até R$ 10.000 é isento (regra desde 2023).",
-                    icon="✅",
-                )
-            else:
-                custo_anual   = resultado["mam"] * 0.002
-                custo_total   = resultado["mam"] * (1 - (1 - 0.002) ** anos_restantes)
-                venc_ajustado = valor_vencimento * (1 - 0.002) ** anos_restantes
-                reducao_pct   = (valor_vencimento - venc_ajustado) / valor_vencimento * 100
-                st.info(
-                    f"- Custo anual (sobre MaM atual): **{formatar_brl(custo_anual)}/ano**\n"
-                    f"- Custo total estimado até {data_vencimento.strftime('%d/%m/%Y')}: "
-                    f"**{formatar_brl(custo_total)}** ({reducao_pct:.1f}% do resgate bruto)\n"
-                    f"- Resgate estimado após custódia: **{formatar_brl(venc_ajustado)}**",
-                    icon="💰",
-                )
+        if _tipo_sel in ("cdb", "lci", "lca"):
+            st.info("Taxa de custódia B3 aplica-se apenas a títulos do Tesouro Direto.", icon="ℹ️")
+        else:
+            descontar_custodia = st.checkbox(
+                "Simular impacto da taxa de custódia B3 (0,20% a.a.)",
+                value=False, key="dash_descontar_custodia",
+            )
+            if descontar_custodia:
+                is_selic = "Selic" in titulo_sel or "Reserva" in titulo_sel
+                if is_selic and valor_investido <= 10_000.0:
+                    st.success(
+                        "**Isenção aplicada:** Tesouro Selic/Reserva até R$ 10.000 é isento (regra desde 2023).",
+                        icon="✅",
+                    )
+                else:
+                    custo_anual   = resultado["mam"] * 0.002
+                    custo_total   = resultado["mam"] * (1 - (1 - 0.002) ** anos_restantes)
+                    venc_ajustado = valor_vencimento * (1 - 0.002) ** anos_restantes
+                    reducao_pct   = (valor_vencimento - venc_ajustado) / valor_vencimento * 100
+                    st.info(
+                        f"- Custo anual (sobre MaM atual): **{formatar_brl(custo_anual)}/ano**\n"
+                        f"- Custo total estimado até {data_vencimento.strftime('%d/%m/%Y')}: "
+                        f"**{formatar_brl(custo_total)}** ({reducao_pct:.1f}% do resgate bruto)\n"
+                        f"- Resgate estimado após custódia: **{formatar_brl(venc_ajustado)}**",
+                        icon="💰",
+                    )
 
         st.markdown("---")
 
@@ -864,4 +1232,12 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
         "dash_choque_stress":      st.session_state.get("dash_choque_stress", 2.0),
         "_portfolio":              st.session_state.get("_portfolio", []),
         "_analysis_pos_idx":       st.session_state.get("_analysis_pos_idx", 0),
+        "venda_ipca_b":            st.session_state.get("venda_ipca_b", 5.0),
+        # Formulário de nova posição
+        "port_cat":                st.session_state.get("port_cat"),
+        "port_titulo":             st.session_state.get("port_titulo"),
+        "port_valor":              st.session_state.get("port_valor", 10_000.0),
+        "port_taxa":               st.session_state.get("port_taxa", 5.50),
+        "port_data":               st.session_state.get("port_data"),
+        "port_vencimento":         st.session_state.get("port_vencimento"),
     })

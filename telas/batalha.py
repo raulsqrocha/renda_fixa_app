@@ -8,7 +8,7 @@ qual título do Tesouro Direto oferece o melhor retorno real pelo menor risco de
 import streamlit as st
 import pandas as pd
 
-from core.dados import obter_dados_completos, montar_catalogo_batalha
+from core.dados import obter_dados_completos, montar_catalogo_batalha, timestamp_ultima_atualizacao, chave_cache_mercado
 from core.persistencia import carregar, salvar, inicializar_session
 from core.financas import (
     analise_batalha,
@@ -134,6 +134,12 @@ def render():
     with st.spinner("Carregando dados do Tesouro Direto..."):
         _, df_titulos, _ = obter_dados_completos()
 
+    _ts = timestamp_ultima_atualizacao(chave_cache_mercado())
+    if not df_titulos.empty:
+        st.caption(f"✅ Dados ao vivo · carregados às **{_ts.strftime('%H:%M')}** (atualiza a cada 2h)")
+    else:
+        st.caption("⚠️ Modo offline — usando dados de referência")
+
     # -----------------------------------------------------------------------
     # Inputs — antes dos expanders para que o painel dinâmico use os valores
     # -----------------------------------------------------------------------
@@ -216,24 +222,26 @@ def render():
         catalogo = montar_catalogo_batalha(df_titulos, selic_pct)
         opcoes   = [t["nome"] for t in catalogo]
 
-        # Garante que bat_selecionados sempre tem itens válidos do catálogo atual
-        if "bat_selecionados" not in st.session_state or not st.session_state["bat_selecionados"]:
-            st.session_state["bat_selecionados"] = (
-                [d for d in _DEFAULTS if d in opcoes] or (opcoes[:5] if opcoes else [])
-            )
+        if not opcoes:
+            st.warning("Nenhum título disponível no catálogo. Verifique a conexão com os dados.", icon="⚠️")
+            selecionados = []
         else:
-            st.session_state["bat_selecionados"] = (
-                [a for a in st.session_state["bat_selecionados"] if a in opcoes]
-                or [d for d in _DEFAULTS if d in opcoes]
-                or (opcoes[:5] if opcoes else [])
-            )
+            # Garante que bat_selecionados sempre tem itens válidos do catálogo atual
+            _bat_fallback = [d for d in _DEFAULTS if d in opcoes] or opcoes[:5]
+            if "bat_selecionados" not in st.session_state or not st.session_state["bat_selecionados"]:
+                st.session_state["bat_selecionados"] = _bat_fallback
+            else:
+                st.session_state["bat_selecionados"] = (
+                    [a for a in st.session_state["bat_selecionados"] if a in opcoes]
+                    or _bat_fallback
+                )
 
-        selecionados = st.multiselect(
-            "Selecione os títulos",
-            options=opcoes,
-            help="Todos os títulos disponíveis — IPCA+, RendA+, Educar+, Prefixado e Selic.",
-            key="bat_selecionados",
-        )
+            selecionados = st.multiselect(
+                "Selecione os títulos",
+                options=opcoes,
+                help="Todos os títulos disponíveis — IPCA+, RendA+, Educar+, Prefixado e Selic.",
+                key="bat_selecionados",
+            )
 
     # -----------------------------------------------------------------------
     # Painel Educativo Dinâmico
@@ -242,12 +250,14 @@ def render():
     ip = ipca_pct  / 100
     sl = selic_pct / 100
 
-    selic_ex = next((t for t in catalogo if t["tipo"] == "selic"), None)
-    pre_ex   = next((t for t in catalogo if t["tipo"] == "pre"),   None)
-    ipca_ex  = (
+    selic_ex  = next((t for t in catalogo if t["tipo"] == "selic"), None)
+    pre_ex    = next((t for t in catalogo if t["tipo"] == "pre"),   None)
+    ipca_ex   = (
         next((t for t in catalogo if t["tipo"] == "ipca_mais" and "IPCA+ 2029" in t["nome"]), None)
-        or next((t for t in catalogo if t["tipo"] == "ipca_mais"), None)
+        or next((t for t in catalogo if t["tipo"] == "ipca_mais" and "IPCA+" in t["nome"]), None)
     )
+    renda_ex  = next((t for t in catalogo if "RendA+" in t["nome"]), None)
+    educar_ex = next((t for t in catalogo if "Educar+" in t["nome"]), None)
 
     st.divider()
     with st.expander("📚  Entenda como cada título se comporta no seu cenário", expanded=True):
@@ -261,6 +271,7 @@ def render():
 
         # ---- Selic ----
         with col_d1:
+
             st.markdown("#### 💰 Tesouro Selic — Pós-Fixado")
             vf_sl   = capital * (1 + sl) ** H
             vf_sl_l = capital * (1 + retorno_liquido_ir(sl, H)) ** H if com_ir else vf_sl
@@ -407,6 +418,78 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
                     """)
             else:
                 st.info("Nenhum IPCA+ disponível no catálogo.")
+
+        # ---- RendA+ e Educar+ ----
+        st.markdown("---")
+        col_d4, col_d5 = st.columns(2)
+
+        with col_d4:
+            st.markdown("#### 🏦 Tesouro RendA+ — Aposentadoria Extra")
+            if renda_ex:
+                tr_r    = renda_ex["taxa"] / 100
+                T_r     = renda_ex["anos_total"]
+                expo_r  = max(0.0, T_r - H)
+                nom_r   = (1 + tr_r) * (1 + ip) - 1
+                vf_r    = capital * (1 + nom_r) ** min(H, T_r)
+                vf_r_l  = capital * (1 + retorno_liquido_ir(nom_r, min(H, T_r))) ** min(H, T_r) if com_ir else vf_r
+                st.metric(
+                    f"Taxa real — {renda_ex['nome'].replace('Tesouro ', '')}",
+                    f"IPCA + {renda_ex['taxa']:.2f}% a.a.",
+                    f"Nominal: ~{nom_r*100:.1f}% com IPCA {ipca_pct:.1f}%",
+                )
+                st.markdown(f"""
+**Fase de acumulação** até {renda_ex['vencimento'].strftime('%d/%m/%Y')}: seu capital cresce a IPCA + {renda_ex['taxa']:.2f}% a.a. — igual a um IPCA+ convencional.
+
+**Fase de renda (após vencimento):** o Tesouro paga **mensalmente** enquanto você viver, como uma renda vitalícia. O valor mensal é proporcional ao capital acumulado.
+
+{formatar_brl(capital)} acumulados até a saída: **{formatar_brl(vf_r_l)}**{" (aprox., com IR)" if com_ir else ""}.
+
+**Exposição MaM:** {expo_r:.1f} ano(s) sobrando após seu horizonte → {_risco_expo("ipca_mais", expo_r)}
+
+⚠️ **Liquidez restrita na fase de renda** — o título não pode ser vendido após iniciada a renda. Planeje como investimento de longo prazo.
+
+⚠️ **IR na fase de renda:** incide sobre cada parcela mensal recebida (alíquota regressiva aplicada individualmente).
+
+**Use quando:** quiser transformar patrimônio em renda vitalícia corrigida pela inflação.
+
+---
+
+📈 **Uso avançado — ganho de MaM:** o RendA+ é o título com o **vencimento mais longo do mercado** (até 2065). Quanto maior o prazo, maior a sensibilidade do preço às variações de taxa — ou seja, uma queda de 1 p.p. na taxa de juros gera um ganho de capital muito maior no RendA+ 2065 do que num IPCA+ 2032. Por isso, investidores que acreditam em queda de juros costumam usar o RendA+ especificamente para capturar essa valorização antecipada via resgate antes do vencimento, e não necessariamente para usufruir da renda vitalícia.
+                """)
+            else:
+                st.info("Nenhum RendA+ disponível no catálogo.")
+
+        with col_d5:
+            st.markdown("#### 🎓 Tesouro Educar+ — Educação dos Filhos")
+            if educar_ex:
+                tr_e    = educar_ex["taxa"] / 100
+                T_e     = educar_ex["anos_total"]
+                expo_e  = max(0.0, T_e - H)
+                nom_e   = (1 + tr_e) * (1 + ip) - 1
+                vf_e    = capital * (1 + nom_e) ** min(H, T_e)
+                vf_e_l  = capital * (1 + retorno_liquido_ir(nom_e, min(H, T_e))) ** min(H, T_e) if com_ir else vf_e
+                st.metric(
+                    f"Taxa real — {educar_ex['nome'].replace('Tesouro ', '')}",
+                    f"IPCA + {educar_ex['taxa']:.2f}% a.a.",
+                    f"Nominal: ~{nom_e*100:.1f}% com IPCA {ipca_pct:.1f}%",
+                )
+                st.markdown(f"""
+**Fase de acumulação** até {educar_ex['vencimento'].strftime('%d/%m/%Y')}: funciona como um IPCA+ — capital cresce a IPCA + {educar_ex['taxa']:.2f}% a.a.
+
+**Fase de pagamento (após vencimento):** o Tesouro paga **mensalmente por 5 anos**, ideal para cobrir mensalidades universitárias. O resgate se divide em 60 parcelas iguais corrigidas.
+
+{formatar_brl(capital)} acumulados até a saída: **{formatar_brl(vf_e_l)}**{" (aprox., com IR)" if com_ir else ""}.
+
+**Exposição MaM:** {expo_e:.1f} ano(s) sobrando após seu horizonte → {_risco_expo("ipca_mais", expo_e)}
+
+⚠️ **Liquidez restrita na fase de pagamento** — após iniciado o recebimento, não é possível resgatar o saldo antecipadamente.
+
+⚠️ **IR em cada parcela:** cada mensalidade tem alíquota regressiva calculada individualmente sobre o lucro embutido.
+
+**Use quando:** quiser financiar os estudos dos filhos com proteção contra inflação e taxa garantida.
+                """)
+            else:
+                st.info("Nenhum Educar+ disponível no catálogo.")
 
         # ---- Tabela de exposição por horizonte ----
         st.markdown("---")

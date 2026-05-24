@@ -13,7 +13,7 @@ import pandas as pd
 from datetime import date
 
 from core.financas import retorno_cenario_ipca, retorno_mam_antecipado, formatar_brl
-from core.dados import obter_dados_completos, CATEGORIAS_TITULOS, TITULOS_CONFIG
+from core.dados import obter_dados_completos, CATEGORIAS_TITULOS, TITULOS_CONFIG, timestamp_ultima_atualizacao, chave_cache_mercado
 from core.graficos import (
     grafico_ipca_historico,
     grafico_cenarios,
@@ -86,6 +86,12 @@ def render():
 
     with st.spinner("Carregando dados..."):
         df_ipca, df_titulos, vna = obter_dados_completos()
+
+    _ts = timestamp_ultima_atualizacao(chave_cache_mercado())
+    if not df_titulos.empty:
+        st.caption(f"✅ Dados ao vivo · carregados às **{_ts.strftime('%H:%M')}** (atualiza a cada 2h)")
+    else:
+        st.caption("⚠️ Modo offline — usando dados de referência")
 
     st.divider()
 
@@ -199,16 +205,18 @@ def render():
             ),
         }
 
-        st.markdown("**Resultados Projetados:**")
+        st.markdown(f"**Resultados Projetados em {anos_restantes} anos:**")
 
         rows = []
         for nome, c in cenarios.items():
+            # Retorno anual nominal equivalente (CAGR)
+            cagr = ((c['valor_final'] / valor_sim) ** (1 / anos_restantes) - 1) * 100
             rows.append({
-                "Cenário":            nome,
-                "Taxa Nominal a.a.":  f"{c['taxa_nominal_aa']:.2f}%",
-                "Valor Final":        formatar_brl(c['valor_final']),
-                "Retorno Nominal":    f"{c['retorno_nominal_pct']:.1f}%",
-                "Ganho Real ✅":      f"+{c['retorno_real_pct']:.1f}%",
+                "Cenário":                    nome,
+                "Taxa Nominal a.a.":          f"{c['taxa_nominal_aa']:.2f}%",
+                "Valor Final":                formatar_brl(c['valor_final']),
+                "Retorno Nominal Acumulado": f"{c['retorno_nominal_pct']:.0f}x o capital" if c['retorno_nominal_pct'] > 1000 else f"{c['retorno_nominal_pct']:.1f}%",
+                "Ganho Real ✅":              f"+{c['retorno_real_pct']:.1f}%",
             })
 
         st.dataframe(
@@ -216,9 +224,11 @@ def render():
             use_container_width=True,
             hide_index=True,
         )
+        _mult_real = (1 + taxa_atual_pct / 100) ** anos_restantes
         st.caption(
-            "✅ *Ganho Real* = retorno acima da inflação. "
-            "Idêntico nos 3 cenários porque a taxa real é contratada no momento da compra."
+            f"✅ *Ganho Real* = poder de compra cresce **{_mult_real:.1f}×** em {anos_restantes} anos — "
+            "idêntico nos 3 cenários porque a taxa real é travada na compra. "
+            "O IPCA só muda o valor nominal, não o quanto você compra com ele."
         )
 
     fig_cen = grafico_cenarios(cenarios, anos_restantes, valor_sim)
@@ -271,20 +281,26 @@ que a taxa real mudou.
     with col_m1:
         titulos_validos = [t for t, cfg in TITULOS_CONFIG.items()
                            if cfg["vencimento"] > date.today()]
-        # Se não há valor salvo, inicializa com o título atual como padrão
-        if "sim_ativos_sel" not in st.session_state or not st.session_state["sim_ativos_sel"]:
-            st.session_state["sim_ativos_sel"] = [titulo] if titulo in titulos_validos else titulos_validos[:1]
-        # Filtra opções que possam ter saído da lista de títulos válidos
+        if not titulos_validos:
+            st.warning("Nenhum título com vencimento futuro disponível no catálogo.")
+            ativos_sel = []
         else:
-            st.session_state["sim_ativos_sel"] = [
-                a for a in st.session_state["sim_ativos_sel"] if a in titulos_validos
-            ] or ([titulo] if titulo in titulos_validos else titulos_validos[:1])
-        ativos_sel = st.multiselect(
-            "Ativos para Simular",
-            options=titulos_validos,
-            help="Selecione os ativos a comparar. Cada ativo usa seu prazo correto (T) na fórmula.",
-            key="sim_ativos_sel",
-        )
+            # Se não há valor salvo, inicializa com o título atual como padrão
+            _fallback = [titulo] if titulo in titulos_validos else titulos_validos[:1]
+            if "sim_ativos_sel" not in st.session_state or not st.session_state["sim_ativos_sel"]:
+                st.session_state["sim_ativos_sel"] = _fallback
+            # Filtra opções que possam ter saído da lista de títulos válidos
+            else:
+                st.session_state["sim_ativos_sel"] = (
+                    [a for a in st.session_state["sim_ativos_sel"] if a in titulos_validos]
+                    or _fallback
+                )
+            ativos_sel = st.multiselect(
+                "Ativos para Simular",
+                options=titulos_validos,
+                help="Selecione os ativos a comparar. Cada ativo usa seu prazo correto (T) na fórmula.",
+                key="sim_ativos_sel",
+            )
 
     with col_m2:
         prazo_saida = st.radio(
@@ -356,6 +372,38 @@ que a taxa real mudou.
                 },
             )
 
+            st.divider()
+            st.markdown("**📐  Forma da Curva Real no Cenário de Saída**")
+            _cv_col1, _cv_col2 = st.columns([2, 1])
+            with _cv_col1:
+                curva_slope = st.slider(
+                    "Inclinação (p.p.)",
+                    min_value=-4.0, max_value=4.0, value=0.0, step=0.25, format="%.2f",
+                    help=(
+                        "Define como a taxa de saída varia por prazo do título. "
+                        "0 = choque paralelo (todos os prazos sobem/caem igual). "
+                        "Positivo = curva normal (longos têm taxa maior). "
+                        "Negativo = curva invertida (curtos têm taxa maior)."
+                    ),
+                    key="sim_curva_slope",
+                )
+            with _cv_col2:
+                _sh = abs(curva_slope) / 2
+                if abs(curva_slope) < 0.01:
+                    st.info("Paralelo — mesma taxa em todos os prazos", icon="⚡")
+                elif curva_slope > 0:
+                    st.success(f"Normal — curto −{_sh:.2f}p.p. / longo +{_sh:.2f}p.p.", icon="📈")
+                else:
+                    st.warning(f"Invertida — curto +{_sh:.2f}p.p. / longo −{_sh:.2f}p.p.", icon="📉")
+            st.caption(
+                "Classificação por prazo restante (T): **curto** T < 5 anos · "
+                "**médio** 5–15 anos · **longo** T > 15 anos. "
+                "A taxa da tabela acima é o ponto central (médio). "
+                "Curto e longo recebem ± metade da inclinação."
+            )
+
+        _curva_slope = st.session_state.get("sim_curva_slope", 0.0)
+
         # Resultados sempre visíveis — independem do estado do expander
         resultados: dict = {"Cenário": df_edit["Cenário"].tolist()}
 
@@ -368,11 +416,15 @@ que a taxa real mudou.
             if prazo_saida >= t:
                 resultados[nome_curto] = ["—"] * len(df_edit)
             else:
+                # Yield curve slope: short (<5yr) → −slope/2, mid (5–15yr) → 0, long (>15yr) → +slope/2
+                _bucket = 1 if t > 15 else (-1 if t < 5 else 0)
+                _adj_pp = (_curva_slope / 2) * _bucket
                 valores = []
                 for _, row in df_edit.iterrows():
+                    _taxa_v = max(0.001, float(row["Taxa IPCA+ (%)"]) / 100 + _adj_pp / 100)
                     ret = retorno_mam_antecipado(
                         taxa_compra     = taxa_c,
-                        taxa_venda      = float(row["Taxa IPCA+ (%)"]) / 100,
+                        taxa_venda      = _taxa_v,
                         anos_saida      = float(prazo_saida),
                         anos_vencimento = float(t),
                     )
@@ -396,6 +448,19 @@ que a taxa real mudou.
             "Taxa de compra = yield atual de mercado de cada ativo. "
             "⚠️ Simulação educacional — não considera IR, IOF nem corretagem."
         )
+        if abs(_curva_slope) > 0.01:
+            _adj_parts = []
+            for _av in ativos_sel:
+                _t = ativos_meta[_av]["t_anos"]
+                if prazo_saida < _t:
+                    _bk = 1 if _t > 15 else (-1 if _t < 5 else 0)
+                    _ap = (_curva_slope / 2) * _bk
+                    _label = "longo" if _bk == 1 else ("curto" if _bk == -1 else "médio")
+                    _adj_parts.append(
+                        f"**{_av.replace('Tesouro ', '')}** (T={_t}a, {_label}): {_ap:+.2f}p.p."
+                    )
+            if _adj_parts:
+                st.caption("📐 Ajuste de curva aplicado: " + " · ".join(_adj_parts))
 
     st.divider()
     st.subheader("📚  Referência de Mercado")
@@ -543,4 +608,11 @@ seu poder de compra em **todos** esses cenários — é exatamente para isso que
         "sim_ipca_base":     st.session_state.get("sim_ipca_base", 4.5),
         "sim_ipca_estresse": st.session_state.get("sim_ipca_estresse", 9.0),
         "sim_prazo_saida":   st.session_state.get("sim_prazo_saida", 3),
+        "sim_curva_slope":   st.session_state.get("sim_curva_slope", 0.0),
+        "sim_di_jan27":      st.session_state.get("sim_di_jan27", 13.20),
+        "sim_di_jan28":      st.session_state.get("sim_di_jan28", 13.40),
+        "sim_di_jan29":      st.session_state.get("sim_di_jan29", 13.55),
+        "sim_di_jan31":      st.session_state.get("sim_di_jan31", 13.68),
+        "sim_di_jan33":      st.session_state.get("sim_di_jan33", 13.82),
+        "sim_di_jan35":      st.session_state.get("sim_di_jan35", 13.90),
     })

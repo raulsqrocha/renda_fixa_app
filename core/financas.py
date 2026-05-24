@@ -473,7 +473,7 @@ def analise_batalha(
 
     if tipo == "selic":
         # Pós-fixado: sem MaM, retorno acompanha Selic — adverso = Selic cai
-        r_adv = retorno_saida_antecipada(max(t - ck, 0.001), max(t - ck, 0.001), anos_total, anos_saida, "selic")
+        r_adv = retorno_saida_antecipada(max(t - ck, 0.005), max(t - ck, 0.005), anos_total, anos_saida, "selic")
         r_neu = retorno_saida_antecipada(t,      t,      anos_total, anos_saida, "selic")
         r_fav = retorno_saida_antecipada(t + ck, t + ck, anos_total, anos_saida, "selic")
         if com_ir:
@@ -483,7 +483,7 @@ def analise_batalha(
     elif _reinvest:
         # Título vence antes do horizonte: Fase 1 = carrego até T; Fase 2 = Selic por H−T.
         # Adverso/Favorável refletem variação da Selic na fase de reinvestimento.
-        r_adv = retorno_hold_to_mat_reinvestido(t, anos_total, anos_saida, tipo, ip, max(sl - ck, 0.001), com_ir)
+        r_adv = retorno_hold_to_mat_reinvestido(t, anos_total, anos_saida, tipo, ip, max(sl - ck, 0.005), com_ir)
         r_neu = retorno_hold_to_mat_reinvestido(t, anos_total, anos_saida, tipo, ip, sl,           com_ir)
         r_fav = retorno_hold_to_mat_reinvestido(t, anos_total, anos_saida, tipo, ip, sl + ck,      com_ir)
     else:
@@ -497,6 +497,8 @@ def analise_batalha(
             r_fav = retorno_liquido_ir(r_fav, anos_saida)
 
     risco_std = float(np.std([r_adv, r_neu, r_fav]))
+    if not np.isfinite(risco_std):
+        risco_std = 0.0
 
     anos_expo = max(0.0, anos_total - anos_saida)
     if tipo == "selic" or anos_expo == 0:

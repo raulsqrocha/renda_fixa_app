@@ -22,7 +22,7 @@ st.set_page_config(
 aplicar_estilo_global()
 
 pg = st.navigation([
-    st.Page("pages/0_Dashboard.py",          title="🏠  Seu Dashboard",            default=True),
+    st.Page("pages/0_Dashboard.py",          title="💼  Minha Carteira",            default=True),
     st.Page("pages/1_Qual_Ativo.py",         title="🎯  Qual Ativo Escolher?"),
     st.Page("pages/2_Comparar_Produtos.py",  title="📊  Comparar Produtos"),
     st.Page("pages/3_Simulador_MaM.py",      title="🔬  Simulador Avançado (MaM)"),

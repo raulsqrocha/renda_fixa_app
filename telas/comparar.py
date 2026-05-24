@@ -16,6 +16,7 @@ from core.financas import (
     formatar_brl,
 )
 from core.persistencia import carregar, salvar, inicializar_session
+from core.dados import timestamp_ultima_atualizacao, chave_cache_mercado
 
 # Cor palette (compartilhada com o restante do app)
 _VERDE    = "#38A169"
@@ -50,6 +51,8 @@ def render():
         'entrega mais retorno real dado o seu horizonte e perfil de tributação.</p>',
         unsafe_allow_html=True,
     )
+    _ts = timestamp_ultima_atualizacao(chave_cache_mercado())
+    st.caption(f"✅ Taxas de referência · carregadas às **{_ts.strftime('%H:%M')}** (atualiza a cada 2h)")
     st.divider()
 
     # -----------------------------------------------------------------------
@@ -229,16 +232,18 @@ def render():
     st.divider()
     st.subheader("📈  Retorno Líquido por Produto")
 
+    _COR_PRODUTO = {
+        "Tesouro IPCA+":     "#a5d6a7",  # verde suave
+        "Tesouro Prefixado": "#ef9a9a",  # vermelho suave
+        "Tesouro Selic":     "#4fc3f7",  # azul claro
+        "CDB":               "#ce93d8",  # roxo
+        "LCI":               "#fff176",  # amarelo
+        "LCA":               "#ffcc80",  # laranja
+    }
+
     nomes    = [p["Produto"] for p in produtos]
     rets_liq = [p["Retorno Líquido"] * 100 for p in produtos]
-    cores    = []
-    for p in produtos:
-        if p["Produto"] == melhor["Produto"]:
-            cores.append(_VERDE)
-        elif p["Isento"]:
-            cores.append(_AZUL)
-        else:
-            cores.append("#4A5568")
+    cores    = [_COR_PRODUTO.get(p["Produto"], "#90caf9") for p in produtos]
 
     fig = go.Figure(go.Bar(
         x=nomes,

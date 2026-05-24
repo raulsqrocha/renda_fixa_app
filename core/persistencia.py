@@ -19,7 +19,13 @@ def _default_prefs() -> dict:
         "_portfolio":              [],
         "_analysis_pos_idx":       0,
         "dash_descontar_custodia": False,
+        "venda_ipca_b":            5.0,
         "dash_choque_stress":      2.0,
+        # Formulário de nova posição (datas não têm default — widget define no primeiro run)
+        "port_cat":                None,
+        "port_titulo":             None,
+        "port_valor":              10_000.0,
+        "port_taxa":               5.50,
         # Simulador
         "sim_categoria":           None,
         "sim_titulo":              None,
@@ -28,6 +34,13 @@ def _default_prefs() -> dict:
         "sim_ipca_base":           4.5,
         "sim_ipca_estresse":       9.0,
         "sim_prazo_saida":         3,
+        "sim_curva_slope":         0.0,
+        "sim_di_jan27":            13.20,
+        "sim_di_jan28":            13.40,
+        "sim_di_jan29":            13.55,
+        "sim_di_jan31":            13.68,
+        "sim_di_jan33":            13.82,
+        "sim_di_jan35":            13.90,
         "sim_ativos_sel":          [],
         # Qual Ativo
         "bat_horizonte":           3,
@@ -65,6 +78,13 @@ def carregar() -> dict:
         with _PREFS_FILE.open("r", encoding="utf-8") as f:
             saved = json.load(f)
         defaults.update(saved)
+        # Garante que campos lista não foram corrompidos no JSON
+        for k in ("_portfolio", "sim_ativos_sel", "bat_selecionados"):
+            if not isinstance(defaults.get(k), list):
+                defaults[k] = _default_prefs()[k]
+        # Garante que índice de análise é inteiro válido
+        if not isinstance(defaults.get("_analysis_pos_idx"), int):
+            defaults["_analysis_pos_idx"] = 0
         return defaults
     except Exception:
         return defaults
@@ -89,6 +109,9 @@ def salvar(prefs: dict) -> None:
         pass
 
 
+_DATE_KEYS = frozenset({"port_data", "port_vencimento"})
+
+
 def inicializar_session(prefs: dict) -> None:
     """
     Injeta os valores salvos no session_state apenas para chaves que ainda
@@ -97,11 +120,13 @@ def inicializar_session(prefs: dict) -> None:
     """
     for k, v in prefs.items():
         if k not in st.session_state:
-            # Converte strings ISO de volta para date quando necessário
-            if isinstance(v, str) and len(v) == 10:
+            if v is None:
+                continue  # deixa o widget usar seu próprio default
+            # Converte strings ISO → date apenas para chaves de data conhecidas
+            if k in _DATE_KEYS and isinstance(v, str):
                 try:
                     st.session_state[k] = date.fromisoformat(v)
-                    continue
                 except ValueError:
-                    pass
+                    pass  # data corrompida — widget usa seu próprio default
+                continue
             st.session_state[k] = v
