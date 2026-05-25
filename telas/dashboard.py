@@ -10,6 +10,7 @@ import calendar as _cal
 from datetime import date, timedelta
 
 from core.financas import (
+    calcular_du,
     datas_cupom_ntnb,
     pu_ntnb,
     metricas_carteira,
@@ -187,11 +188,13 @@ def render():
             return None
         tc     = taxa_pct / 100
         hoje   = date.today()
-        dias_d = max(0, (hoje - dc).days)
+        # DU/252: convenção ANBIMA/B3 para todos os títulos de renda fixa
+        du_d   = calcular_du(dc, hoje)
+        du_t   = calcular_du(dc, dv)
         anos_t = (dv - dc).days / 365
         anos_r = max(1, round((dv - hoje).days / 365))
-        mam    = valor * (1 + tc) ** (dias_d / 365)
-        vf     = valor * (1 + tc) ** anos_t
+        mam    = valor * (1 + tc) ** (du_d / 252)
+        vf     = valor * (1 + tc) ** (du_t / 252)
         ps     = min(60.0, 10.0 + anos_r * 7.0)
         # Selic e bancários: sem risco de MaM → posicao_score pleno
         # Prefixado: tem risco de taxa → posicao_score reduzido
@@ -221,7 +224,7 @@ def render():
             with _dc2:
                 _dc_selic     = st.number_input(
                     "Tesouro Selic (% a.a.)",
-                    min_value=1.0, max_value=30.0, value=13.0,
+                    min_value=1.0, max_value=30.0, value=14.75,
                     step=0.05, format="%.2f", key="dash_calc_selic",
                 )
                 _dc_pre       = st.number_input(
@@ -450,7 +453,7 @@ def render():
             "Tesouro RendA+":             5.50,
             "Tesouro Educar+":            5.50,
             "Tesouro Selic":             14.75,
-            "Tesouro Prefixado":         13.50,
+            "Tesouro Prefixado":         14.50,
             "CDB":                       12.50,
             "LCI":                       11.00,
             "LCA":                       10.80,
@@ -582,7 +585,7 @@ def render():
             if c_ex:
                 st.session_state["_portfolio"] = [dict(
                     titulo="Tesouro IPCA+ 2032", valor=15_000.0, taxa=7.50,
-                    data_compra="2026-05-20",
+                    data_compra="2026-05-20", tipo_asset="ipca_mais",
                     mam_cache=c_ex["res"]["mam"], carrego_cache=c_ex["vf"],
                     vencimento=c_ex["dv"].isoformat(), anos=c_ex["anos_res"],
                 )]
@@ -935,7 +938,7 @@ def render():
             "port_vencimento":         st.session_state.get("port_vencimento"),
             # Calculadora de Aportes Mensais
             "dash_calc_ipca":          st.session_state.get("dash_calc_ipca", 5.0),
-            "dash_calc_selic":         st.session_state.get("dash_calc_selic", 13.0),
+            "dash_calc_selic":         st.session_state.get("dash_calc_selic", 14.75),
             "dash_calc_pre":           st.session_state.get("dash_calc_pre", 14.5),
             "dash_calc_ipca_plus":     st.session_state.get("dash_calc_ipca_plus", 7.0),
             "dash_calc_cdb":           st.session_state.get("dash_calc_cdb", 14.0),
@@ -1519,14 +1522,22 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
             total_cap = sum(s["capital"] for s in _port_stats)
 
             # Métricas ponderadas
-            taxa_pond = sum(s["taxa"] * s["capital"] for s in _port_stats) / total_cap
-            dur_pond  = sum(s["anos"] * s["capital"] for s in _port_stats) / total_cap
+            taxa_pond  = sum(s["taxa"] * s["capital"] for s in _port_stats) / total_cap
+            dur_pond   = sum(s["anos"] * s["capital"] for s in _port_stats) / total_cap
             score_pond = sum(s["score"] * s["capital"] for s in _port_stats) / total_cap
+
+            _tipos_cart = {s["tipo"] for s in _port_stats}
+            _so_ipca    = _tipos_cart <= {"IPCA+/RendA+/Educar+"}
+            _so_nominal = _tipos_cart <= {"Pós-Fixado (Selic)", "Pré-Fixado", "CDB", "LCI", "LCA"}
+            _sfx_taxa   = "real" if _so_ipca else "nominal" if _so_nominal else "mista"
 
             pm1, pm2, pm3 = st.columns(3)
             with pm1:
-                st.metric("Taxa Média Ponderada", f"{taxa_pond:.2f}% a.a. real",
-                          "Média por capital investido")
+                st.metric("Taxa Média Ponderada", f"{taxa_pond:.2f}% a.a. {_sfx_taxa}",
+                          "Média por capital investido",
+                          help="Para carteiras mistas (IPCA+ real + Selic/Pré nominal), "
+                               "a média é apenas indicativa — não representa uma taxa homogênea."
+                               if _sfx_taxa == "mista" else None)
             with pm2:
                 st.metric("Duração Média Ponderada", f"{dur_pond:.1f} anos",
                           "Prazo médio restante da carteira")
@@ -1542,30 +1553,29 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
             _tipo_dominante = max(_por_tipo_cap, key=_por_tipo_cap.get)
             _pct_dominante  = _por_tipo_cap[_tipo_dominante] / total_cap * 100
 
+            # Tipos sem risco de MaM: concentração é oportunidade perdida, não perigo
+            _sem_mam = {"Pós-Fixado (Selic)", "CDB", "LCI", "LCA"}
             _rec_diversificar = {
-                "IPCA+/RendA+/Educar+": "Tesouro Selic e Pré-Fixado",
-                "Pós-Fixado (Selic)":   "IPCA+ e Pré-Fixado",
-                "Pré-Fixado":           "IPCA+ e Tesouro Selic",
-                "CDB": "Tesouro Direto e LCI/LCA para diversificar entre emissores",
-                "LCI": "Tesouro Direto e CDB para diversificar entre emissores",
-                "LCA": "Tesouro Direto e CDB para diversificar entre emissores",
+                "IPCA+/RendA+/Educar+": "Tesouro Selic e/ou Pré-Fixado",
+                "Pré-Fixado":           "IPCA+ e/ou Tesouro Selic",
             }
-            _rec = _rec_diversificar.get(_tipo_dominante, "outros tipos de renda fixa")
+            _rec = _rec_diversificar.get(_tipo_dominante, "")
 
-            if _pct_dominante >= 90:
-                st.error(
-                    f"🔴 **Concentração crítica:** {_pct_dominante:.0f}% do portfólio está em "
-                    f"**{_tipo_dominante}**. Considere diversificar em **{_rec}** "
-                    f"para reduzir o risco de taxa e de reinvestimento.",
-                    icon="⚠️",
-                )
-            elif _pct_dominante >= 70:
-                st.warning(
-                    f"🟡 **Alta concentração:** {_pct_dominante:.0f}% do portfólio está em "
-                    f"**{_tipo_dominante}**. Diversificar em **{_rec}** reduz a exposição a "
-                    f"cenários adversos específicos de cada classe.",
-                    icon="⚠️",
-                )
+            if _tipo_dominante not in _sem_mam and _rec:
+                if _pct_dominante >= 90:
+                    st.error(
+                        f"🔴 **Concentração crítica em MaM:** {_pct_dominante:.0f}% em "
+                        f"**{_tipo_dominante}**. Um choque de taxas afeta fortemente o resgate "
+                        f"antecipado. Considere adicionar **{_rec}**.",
+                        icon="⚠️",
+                    )
+                elif _pct_dominante >= 70:
+                    st.warning(
+                        f"🟡 **Alta exposição a MaM:** {_pct_dominante:.0f}% em "
+                        f"**{_tipo_dominante}**. Adicionar **{_rec}** reduz sensibilidade "
+                        f"a variações de taxa.",
+                        icon="⚠️",
+                    )
 
             st.markdown("---")
 
@@ -1736,7 +1746,7 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
         "port_vencimento":         st.session_state.get("port_vencimento"),
         # Calculadora de Aportes Mensais
         "dash_calc_ipca":          st.session_state.get("dash_calc_ipca", 5.0),
-        "dash_calc_selic":         st.session_state.get("dash_calc_selic", 13.0),
+        "dash_calc_selic":         st.session_state.get("dash_calc_selic", 14.75),
         "dash_calc_pre":           st.session_state.get("dash_calc_pre", 14.5),
         "dash_calc_ipca_plus":     st.session_state.get("dash_calc_ipca_plus", 7.0),
         "dash_calc_cdb":           st.session_state.get("dash_calc_cdb", 14.0),

@@ -230,7 +230,7 @@ def render():
             ),
         )
         selic_pct = st.slider(
-            "🏦 Selic Projetada (% a.a.)", 2.0, 25.0, 13.0, 0.25, format="%.2f%%",
+            "🏦 Selic Projetada (% a.a.)", 2.0, 25.0, 14.75, 0.25, format="%.2f%%",
             key="bat_selic",
             help=(
                 "**O que é:** a Selic é a taxa básica de juros do Brasil, definida pelo "
@@ -853,7 +853,7 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
         "bat_capital":      st.session_state.get("bat_capital", 10_000.0),
         "bat_com_ir":       st.session_state.get("bat_com_ir", True),
         "bat_ipca":         st.session_state.get("bat_ipca", 5.0),
-        "bat_selic":        st.session_state.get("bat_selic", 13.0),
+        "bat_selic":        st.session_state.get("bat_selic", 14.75),
         "bat_choque":       st.session_state.get("bat_choque", 1.0),
         "bat_selecionados": st.session_state.get("bat_selecionados", _DEFAULTS),
         "bat_perfil":       st.session_state.get("bat_perfil", "Moderado"),

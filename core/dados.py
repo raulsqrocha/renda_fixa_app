@@ -27,7 +27,7 @@ import pytz
 # Constantes
 # ---------------------------------------------------------------------------
 
-URL_BCB_IPCA    = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/132?formato=json"
+URL_BCB_IPCA    = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/140?formato=json"
 # Tesouro Transparente — CSV oficial, gratuito, sem auth, atualização diária
 URL_TESOURO_CSV = (
     "https://www.tesourotransparente.gov.br/ckan/dataset/"
@@ -79,9 +79,9 @@ TITULOS_BATALHA: dict = {
     "Tesouro Selic 2031":     {"vencimento": date(2031, 3, 1),  "tipo": "selic", "taxa_ref": None},
     "Tesouro Reserva":        {"vencimento": date(2027, 3, 1),  "tipo": "selic", "taxa_ref": None},
     # Pré-Fixado
-    "Tesouro Prefixado 2029": {"vencimento": date(2029, 1, 1),  "tipo": "pre",   "taxa_ref": 13.50},
-    "Tesouro Prefixado 2032": {"vencimento": date(2032, 1, 1),  "tipo": "pre",   "taxa_ref": 13.89},
-    "Tesouro Prefixado com Juros Semestrais 2037": {"vencimento": date(2037, 1, 1), "tipo": "pre", "taxa_ref": 14.00},
+    "Tesouro Prefixado 2029": {"vencimento": date(2029, 1, 1),  "tipo": "pre",   "taxa_ref": 14.50},
+    "Tesouro Prefixado 2032": {"vencimento": date(2032, 1, 1),  "tipo": "pre",   "taxa_ref": 14.89},
+    "Tesouro Prefixado com Juros Semestrais 2037": {"vencimento": date(2037, 1, 1), "tipo": "pre", "taxa_ref": 14.89},
     # Todos os IPCA+, RendA+ e Educar+ do catálogo completo
     **{
         nome: {"vencimento": cfg["vencimento"], "tipo": "ipca_mais", "taxa_ref": None}
@@ -222,7 +222,8 @@ def buscar_ipca_bcb() -> pd.DataFrame:
 
 def _ipca_fallback() -> pd.DataFrame:
     """
-    Série histórica real do IPCA mensal: jan/2015 a dez/2025 (132 meses).
+    Série histórica real do IPCA mensal: jan/2015 a mai/2026 (137 meses).
+    Jan–dez/2025: dados oficiais. Jan–mai/2026: estimativas — atualizar quando BCB publicar.
     Usada quando a API do BCB está indisponível.
     """
     valores = [
@@ -248,8 +249,10 @@ def _ipca_fallback() -> pd.DataFrame:
         0.42, 0.83, 0.16, 0.38, 0.46, 0.20, 0.38, -0.02, 0.44, 0.56, 0.39, 0.52,
         # 2025
         0.16, 1.31, 1.32, 0.43, 0.43, 0.24, 0.28, 0.17, 0.44, 0.56, 0.39, 0.52,
+        # 2026 (estimativas — atualize quando BCB publicar os dados oficiais)
+        0.16, 1.31, 1.32, 0.43, 0.43,
     ]
-    datas = pd.date_range("2015-01-01", periods=132, freq="MS")
+    datas = pd.date_range("2015-01-01", periods=137, freq="MS")
     return pd.DataFrame({"data": datas, "valor": valores})
 
 

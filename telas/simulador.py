@@ -529,7 +529,7 @@ no futuro — cenário positivo para quem detém títulos longos.
         vencimentos_di = ["Jan/27", "Jan/28", "Jan/29", "Jan/31", "Jan/33", "Jan/35"]
         _di_keys       = ["sim_di_jan27", "sim_di_jan28", "sim_di_jan29",
                           "sim_di_jan31", "sim_di_jan33", "sim_di_jan35"]
-        defaults_di    = [13.20, 13.40, 13.55, 13.68, 13.82, 13.90]
+        defaults_di    = [14.75, 14.70, 14.65, 14.55, 14.40, 14.25]
 
         cols_di   = st.columns(len(vencimentos_di))
         di_inputs = []

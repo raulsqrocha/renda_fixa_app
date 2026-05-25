@@ -150,7 +150,6 @@ def sidebar_info() -> None:
                 total_carrego = sum(p.get("carrego_cache", p["valor"])     for p in portfolio)
                 var_pct       = (total_mam - total_cap) / total_cap * 100
                 cor_var       = "#38A169" if var_pct >= 0 else "#E53E3E"
-                scores        = [st.session_state.get("_dash_pos", {}).get("score")]
                 saude         = pos["score"] if pos else None
                 cor_saude     = "#38A169" if saude and saude >= 70 else "#ECC94B" if saude and saude >= 40 else "#E53E3E"
                 saude_html    = (
