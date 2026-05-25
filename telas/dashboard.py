@@ -87,6 +87,18 @@ def render():
                     f"~{_selic_meta:.2f}% a.a.",
                     f"Pós-fixado · Selic {_selic_meta:.2f}% + spread {_spread_sl:.2f}%",
                     delta_color="off",
+                    help=(
+                        "**Por que o valor é aproximado (~)?**\n\n"
+                        "O Tesouro Selic é pós-fixado: ele rende *diariamente* a taxa Selic vigente, "
+                        "que pode mudar a cada reunião do COPOM (~45 dias).\n\n"
+                        f"**Meta Selic atual:** {_selic_meta:.2f}% a.a. (fonte: Banco Central, Série 1178)\n\n"
+                        f"**Spread do Tesouro Selic:** +{_spread_sl:.2f}% a.a. "
+                        "(pequena taxa adicional paga pelo título acima da Selic pura)\n\n"
+                        "O rendimento final do investidor é a **Selic acumulada dia a dia** até o resgate — "
+                        "não é possível saber com exatidão hoje quanto será no futuro, pois depende das "
+                        "decisões futuras do COPOM. O símbolo **~** indica exatamente isso: é o melhor "
+                        "valor de referência disponível agora, não uma taxa travada."
+                    ),
                 )
         with _pc2:
             if not _m_pre.empty:
