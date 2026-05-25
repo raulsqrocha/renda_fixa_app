@@ -345,6 +345,19 @@ que a taxa real mudou.
             with cols_meta[i]:
                 st.metric(nome_curto, f"{meta['taxa']:.2f}% a.a.", delta_str, help=help_str)
 
+        # Aviso: fórmula de MaM é aproximação para títulos com cupons semestrais
+        _cupom_sel = [a for a in ativos_sel if "Juros Semestrais" in a]
+        if _cupom_sel:
+            _nomes = ", ".join(a.replace("Tesouro ", "") for a in _cupom_sel)
+            st.info(
+                f"**{_nomes}** paga(m) cupons semestrais durante o período de holding. "
+                "A tabela abaixo mostra apenas o **efeito de preço** (variação do PU com a taxa) — "
+                "os cupons recebidos ao longo do caminho não estão incluídos. "
+                "O retorno total real é **maior** do que os valores exibidos. "
+                "Use como referência para o risco de MaM, não como retorno total.",
+                icon="ℹ️",
+            )
+
         with st.expander("🛠️  Configurar cenários macroeconômicos", expanded=True):
             st.caption(
                 "Edite o IPCA projetado (contexto) e a taxa real de saída para cada cenário. "

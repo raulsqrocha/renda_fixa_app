@@ -20,7 +20,7 @@ from core.financas import (
     fv_mensal,
     pmt_para_meta,
 )
-from core.dados import obter_dados_completos, CATEGORIAS_TITULOS, TITULOS_CONFIG, TITULOS_BATALHA, timestamp_ultima_atualizacao, chave_cache_mercado
+from core.dados import obter_dados_completos, calcular_vna_em_data, CATEGORIAS_TITULOS, TITULOS_CONFIG, TITULOS_BATALHA, timestamp_ultima_atualizacao, chave_cache_mercado
 from core.persistencia import carregar, salvar, inicializar_session
 from core.graficos import grafico_paradoxo, grafico_score
 import plotly.graph_objects as go
@@ -117,8 +117,12 @@ def render():
         if dc >= dv:
             return None
 
+        # VNA na data de compra — corrige a quantidade e os valores absolutos de MaM/carrego
+        # pelo IPCA acumulado desde a compra. Sem isso, ambos ficam subestimados em ~IPCA*anos.
+        vna_compra = calcular_vna_em_data(df_ipca, dc)
+
         cpns_c = datas_cupom_ntnb(dc, dv) if cupom else []
-        pu_c   = pu_ntnb(vna, tc, dc, dv, cpns_c)
+        pu_c   = pu_ntnb(vna_compra, tc, dc, dv, cpns_c)
         if pu_c <= 0:
             return None
 

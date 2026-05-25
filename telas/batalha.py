@@ -631,6 +631,19 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
             icon="🔍",
         )
 
+    # Aviso: fórmula de saída antecipada é aproximação para títulos com cupons semestrais
+    _cupom_selecionados = [a["nome"] for a in analises if "Juros Semestrais" in a["nome"]]
+    if _cupom_selecionados:
+        _nomes_cupom = ", ".join(n.replace("Tesouro ", "") for n in _cupom_selecionados)
+        st.info(
+            f"**{_nomes_cupom}** paga(m) cupons semestrais durante o período de holding. "
+            "O retorno exibido captura apenas o **efeito de preço** (variação do PU quando a taxa muda) — "
+            "os cupons recebidos ao longo do caminho não estão computados. "
+            "O retorno total real desses títulos é **maior** do que os valores mostrados. "
+            "Use os números para comparar o risco de Marcação a Mercado, não como retorno total.",
+            icon="ℹ️",
+        )
+
     # -----------------------------------------------------------------------
     # Semáforo de Risco
     # -----------------------------------------------------------------------

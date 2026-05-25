@@ -10,6 +10,61 @@ from datetime import date, timedelta
 from typing import List
 
 
+# ---------------------------------------------------------------------------
+# Calendário oficial ANBIMA — feriados nacionais para precificação
+# ---------------------------------------------------------------------------
+
+def _computar_feriados_anbima(ano_inicio: int = 2015, ano_fim: int = 2070) -> list:
+    """
+    Gera os feriados nacionais reconhecidos pela ANBIMA.
+
+    Feriados variáveis (Carnaval, Sexta-feira Santa, Corpus Christi) são
+    derivados da Páscoa pelo algoritmo de Gauss.
+    Consciência Negra (nov/20) incluída para todo o período — observada como
+    não-útil bancário em São Paulo desde 2004 e nacional a partir de 2024.
+    """
+    feriados = []
+    for ano in range(ano_inicio, ano_fim + 1):
+        # Páscoa — algoritmo de Gauss
+        a = ano % 19
+        b = ano // 100
+        c = ano % 100
+        d = b // 4
+        e = b % 4
+        f = (b + 8) // 25
+        g = (b - f + 1) // 3
+        h = (19 * a + b - d - g + 15) % 30
+        i = c // 4
+        k = c % 4
+        l = (32 + 2 * e + 2 * i - h - k) % 7
+        m = (a + 11 * h + 22 * l) // 451
+        mes_p = (h + l - 7 * m + 114) // 31
+        dia_p = ((h + l - 7 * m + 114) % 31) + 1
+        pascoa = date(ano, mes_p, dia_p)
+
+        feriados += [
+            pascoa - timedelta(days=48),   # Segunda de Carnaval
+            pascoa - timedelta(days=47),   # Terça de Carnaval
+            pascoa - timedelta(days=2),    # Sexta-feira Santa
+            pascoa + timedelta(days=60),   # Corpus Christi
+            date(ano, 1,  1),              # Ano Novo
+            date(ano, 4,  21),             # Tiradentes
+            date(ano, 5,  1),              # Dia do Trabalho
+            date(ano, 9,  7),              # Independência do Brasil
+            date(ano, 10, 12),             # Nossa Senhora Aparecida
+            date(ano, 11, 2),              # Finados
+            date(ano, 11, 15),             # Proclamação da República
+            date(ano, 11, 20),             # Consciência Negra
+            date(ano, 12, 25),             # Natal
+        ]
+    return sorted(set(feriados))
+
+
+_CALENDARIO_ANBIMA = np.busdaycalendar(
+    holidays=[np.datetime64(d, 'D') for d in _computar_feriados_anbima()]
+)
+
+
 def formatar_brl(valor: float, casas: int = 2) -> str:
     """Formata um valor no padrão monetário brasileiro: R$ 1.234,56"""
     fmt = f"{valor:,.{casas}f}"
@@ -20,22 +75,17 @@ def formatar_brl(valor: float, casas: int = 2) -> str:
 # Utilitários de datas
 # ---------------------------------------------------------------------------
 
-# Média de feriados ANBIMA que caem em dias úteis por ano (~10–13 dependendo do ano)
-_FERIADOS_ANBIMA_POR_ANO = 11
-
-
 def calcular_du(data_inicio: date, data_fim: date) -> int:
     """
-    Dias úteis entre duas datas usando convenção brasileira 252 d.u./ano.
-    Conta seg–sex via np.busday_count e desconta ~11 feriados ANBIMA/ano (estimativa).
-    Desvio esperado: ±2 DU por ano vs. calendário oficial ANBIMA.
+    Dias úteis entre duas datas usando o calendário oficial ANBIMA.
+    Feriados computados algoritmicamente: Páscoa (Gauss) + fixos nacionais.
+    Cobre 2015–2070, sem aproximações.
     """
-    du_semana = max(0, int(np.busday_count(
+    return max(0, int(np.busday_count(
         np.datetime64(data_inicio, 'D'),
         np.datetime64(data_fim, 'D'),
+        busdaycal=_CALENDARIO_ANBIMA,
     )))
-    anos = (data_fim - data_inicio).days / 365
-    return max(0, du_semana - round(anos * _FERIADOS_ANBIMA_POR_ANO))
 
 
 def datas_cupom_ntnb(data_hoje: date, data_vencimento: date) -> List[date]:

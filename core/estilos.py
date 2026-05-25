@@ -101,6 +101,21 @@ html, body, [class*="css"] {
 .block-container { padding-top: 3.5rem; }
 
 hr { border-color: #2D3748 !important; }
+
+/* ── Títulos das páginas secundárias ────────────────────────────────── */
+.titulo-principal {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #FAFAFA;
+    line-height: 1.2;
+    margin: 0 0 0.35rem 0;
+}
+.subtitulo {
+    font-size: 0.92rem;
+    color: #718096;
+    margin: 0 0 1.2rem 0;
+    max-width: 620px;
+}
 </style>
 """
 

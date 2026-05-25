@@ -230,6 +230,27 @@ def calcular_vna_via_bcb(df_ipca: pd.DataFrame) -> float:
     return round(VNA_BASE_DEZ2014 * fator, 2)
 
 
+def calcular_vna_em_data(df_ipca: pd.DataFrame, data_ref: date) -> float:
+    """
+    Estima o VNA em uma data histórica acumulando IPCA desde jan/2015 até data_ref.
+
+    Inclui todos os meses com início ≤ data_ref (convenção: o IPCA do mês
+    é incorporado ao VNA no dia 15 daquele mês).
+
+    Usado para calcular o PU correto na data de compra — sem esse ajuste,
+    o app subestimaria MaM e carrego pelo IPCA acumulado desde a compra.
+    """
+    corte = pd.Timestamp("2015-01-01")
+    limite = pd.Timestamp(data_ref.replace(day=1))
+    df = df_ipca[(df_ipca["data"] >= corte) & (df_ipca["data"] <= limite)].copy()
+
+    if df.empty:
+        return VNA_BASE_DEZ2014
+
+    fator = float(np.prod(1 + df["valor"].values / 100))
+    return round(VNA_BASE_DEZ2014 * fator, 2)
+
+
 # ---------------------------------------------------------------------------
 # Tesouro Direto — preços e taxas
 # ---------------------------------------------------------------------------
