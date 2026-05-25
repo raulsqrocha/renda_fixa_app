@@ -427,7 +427,7 @@ def render():
             "IPCA+ com Juros Semestrais": 5.50,
             "Tesouro RendA+":             5.50,
             "Tesouro Educar+":            5.50,
-            "Tesouro Selic":             13.25,
+            "Tesouro Selic":             14.75,
             "Tesouro Prefixado":         13.50,
             "CDB":                       12.50,
             "LCI":                       11.00,
@@ -443,7 +443,7 @@ def render():
         }
         _TAXA_HELP = {
             "ipca_mais": "Spread real sobre o IPCA contratado na compra. Ex.: 7,50 → IPCA + 7,50% a.a.",
-            "selic":     "Taxa Selic equivalente anual esperada. Ex.: 13,25 para Selic atual.",
+            "selic":     "Taxa Selic equivalente anual esperada. Ex.: 14,75 para Selic atual.",
             "pre":       "Taxa nominal prefixada contratada na compra. Ex.: 13,50% a.a.",
             "cdb":       "Taxa nominal anual do CDB (pré-fixado) ou equivalente CDI. Ex.: 12,50.",
             "lci":       "Taxa nominal anual da LCI — isenta de IR para pessoa física. Ex.: 11,00.",

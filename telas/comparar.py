@@ -94,7 +94,7 @@ def render():
         selic = st.number_input(
             "Selic projetada (% a.a.)",
             min_value=1.0, max_value=30.0,
-            value=13.25, step=0.05, format="%.2f",
+            value=14.75, step=0.05, format="%.2f",
             help="Taxa Selic média esperada no período.",
             key="cmp_selic",
         )

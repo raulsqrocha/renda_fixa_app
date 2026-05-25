@@ -158,7 +158,7 @@ def buscar_selic_meta_bcb() -> float:
     """
     Retorna a meta da Selic mais recente (BCB Série 1178), em % a.a.
     TTL de 4 horas — muda apenas nas reuniões do COPOM (~a cada 45 dias).
-    Fallback: 13.25% se a API estiver indisponível.
+    Fallback: 14.75% se a API estiver indisponível.
     """
     try:
         url  = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados/ultimos/1?formato=json"
@@ -166,7 +166,7 @@ def buscar_selic_meta_bcb() -> float:
         resp.raise_for_status()
         return float(resp.json()[0]["valor"])
     except Exception:
-        return 13.25
+        return 14.75
 
 
 @st.cache_data(ttl=3600 * 8)
@@ -392,7 +392,7 @@ def _titulos_fallback() -> pd.DataFrame:
         venc = cfg["vencimento"]
         if venc <= hoje:
             continue
-        taxa = cfg.get("taxa_ref") or (13.25 if cfg["tipo"] == "selic" else 14.0)
+        taxa = cfg.get("taxa_ref") or (14.75 if cfg["tipo"] == "selic" else 14.0)
         registros.append({
             "nome":        nome,
             "vencimento":  venc.isoformat(),
