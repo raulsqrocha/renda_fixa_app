@@ -734,30 +734,77 @@ def render():
             )
 
             if _tipo_conc:
-                _pct_conc   = _totais_grupo[_tipo_conc] / total_cap
-                _prazo_med  = sum(_p.get("anos", 3) * _p["valor"] for _p in portfolio) / total_cap
-                _selic_ref  = buscar_selic_meta_bcb()
-                _ipca_ref   = st.session_state.get("bat_ipca", 5.0)
+                _pct_conc = _totais_grupo[_tipo_conc] / total_cap
 
-                _GAP = {
-                    "ipca_mais": "selic",
-                    "selic":     "ipca_mais",
-                    "pre":       "ipca_mais",
-                    "credito":   "selic",
-                }
+                # Prazo médio ponderado apenas das posições concentradas
+                _pos_conc   = [_p for _p in portfolio
+                               if _GRUPO.get(_p.get("tipo_asset", "ipca_mais")) == _tipo_conc]
+                _total_conc = sum(_p["valor"] for _p in _pos_conc)
+                _prazo_conc = sum(_p.get("anos", 3) * _p["valor"] for _p in _pos_conc) / max(_total_conc, 1)
+
+                # Prazo médio do portfólio inteiro (referência para escolher o título recomendado)
+                _prazo_med  = sum(_p.get("anos", 3) * _p["valor"] for _p in portfolio) / total_cap
+
+                # Nível de risco real da concentração:
+                #   "seguro"   — Selic/crédito: sem risco MaM; a concentração é oportunidade perdida, não perigo
+                #   "moderado" — IPCA+/Pré com prazo ≤ 5 anos: risco MaM existe mas é administrável
+                #   "exposto"  — IPCA+/Pré com prazo > 5 anos: duration alta, choque de taxa = perda relevante
+                if _tipo_conc in ("selic", "credito"):
+                    _nivel = "seguro"
+                elif _prazo_conc <= 5:
+                    _nivel = "moderado"
+                else:
+                    _nivel = "exposto"
+
                 _NOME_CONC = {
                     "ipca_mais": "IPCA+",
                     "selic":     "Pós-Fixado (Selic)",
                     "pre":       "Pré-Fixado",
                     "credito":   "Crédito Privado (CDB/LCI/LCA)",
                 }
-                _MOTIVO = {
-                    "ipca_mais": "toda a carteira fica exposta ao risco de Marcação a Mercado — um título Selic garante liquidez imediata sem variação de preço.",
-                    "selic":     "carteira 100% pós-fixada perde poder de compra se a Selic cair — um IPCA+ trava um ganho real acima da inflação.",
-                    "pre":       "Prefixado concentrado fica vulnerável a surpresas de inflação — um IPCA+ garante o ganho real independente do IPCA.",
-                    "credito":   "crédito privado carrega risco do emissor — um Tesouro Selic oferece segurança soberana e liquidez diária.",
+                _GAP = {
+                    "ipca_mais": "selic",
+                    "selic":     "ipca_mais",
+                    "pre":       "ipca_mais",
+                    "credito":   "selic",
+                }
+                _ESTILO = {
+                    "seguro":   "badge-seguranca",
+                    "moderado": "alerta-mercado",
+                    "exposto":  "alerta-mercado",
+                }
+                _CABECALHO = {
+                    "seguro": (
+                        f"💡 <strong>{_pct_conc*100:.0f}% da carteira em {_NOME_CONC[_tipo_conc]} "
+                        f"— posição segura, sem risco de MaM.</strong>"
+                    ),
+                    "moderado": (
+                        f"⚠️ <strong>{_pct_conc*100:.0f}% da carteira em {_NOME_CONC[_tipo_conc]} "
+                        f"com prazo médio de {_prazo_conc:.1f} ano(s) — risco de MaM moderado.</strong>"
+                    ),
+                    "exposto": (
+                        f"⚠️ <strong>{_pct_conc*100:.0f}% da carteira em {_NOME_CONC[_tipo_conc]} "
+                        f"de longo prazo ({_prazo_conc:.1f} anos médios) — risco de MaM elevado.</strong>"
+                    ),
+                }
+                _CORPO = {
+                    "seguro": (
+                        "Você não corre risco de preço — pode resgatar a qualquer momento sem surpresas. "
+                        "Se quiser maior rentabilidade real com um pouco mais de risco controlado, "
+                        "considere diversificar parte da carteira para:"
+                    ),
+                    "moderado": (
+                        "Com essa concentração, uma alta de taxas reduziria o valor de resgate antecipado. "
+                        "Para equilibrar risco e liquidez, considere adicionar:"
+                    ),
+                    "exposto": (
+                        f"Com {_prazo_conc:.1f} anos de duration médio, um choque de 1 p.p. nas taxas pode "
+                        "reduzir significativamente o valor de resgate. Para proteger a carteira, considere:"
+                    ),
                 }
 
+                _selic_ref = buscar_selic_meta_bcb()
+                _ipca_ref  = st.session_state.get("bat_ipca", 5.0)
                 _tipo_rec  = _GAP[_tipo_conc]
                 _cat_rec   = montar_catalogo_batalha(df_titulos, _selic_ref)
                 _cands     = [t for t in _cat_rec if t["tipo"] == _tipo_rec][:6]
@@ -790,16 +837,15 @@ def render():
                         _taxa_rec = f"{_ct['taxa']:.2f}% a.a."
 
                     st.markdown(
-                        f'<div class="alerta-mercado" style="margin-top:0.8rem;">'
-                        f'⚠️ <strong>{_pct_conc*100:.0f}% da carteira está em {_NOME_CONC[_tipo_conc]}:</strong> '
-                        f'{_MOTIVO[_tipo_conc]}<br><br>'
-                        f'💡 <strong>Sugestão para diversificar → {_nome_rec}</strong> &nbsp;·&nbsp; '
-                        f'{_taxa_rec} &nbsp;·&nbsp; '
+                        f'<div class="{_ESTILO[_nivel]}" style="margin-top:0.8rem;">'
+                        f'{_CABECALHO[_nivel]}<br><br>'
+                        f'{_CORPO[_nivel]}<br><br>'
+                        f'→ <strong>{_nome_rec}</strong> &nbsp;·&nbsp; {_taxa_rec} &nbsp;·&nbsp; '
                         f'Retorno estimado: <strong>{_an["ret_neu"]:.1f}% a.a.</strong> (neutro, com IR) &nbsp;·&nbsp; '
-                        f'Risco MaM: <strong>{_an["risco_label"]}</strong> &nbsp;·&nbsp; '
-                        f'horizonte considerado: <strong>{_prazo_med:.1f} ano(s)</strong>.<br>'
-                        f'<span style="font-size:0.8rem; color:#718096;">Para análise completa com cenários, acesse '
-                        f'<em>Qual Ativo Escolher?</em> no menu lateral.</span>'
+                        f'Risco MaM: <strong>{_an["risco_label"]}</strong>'
+                        f'<br><span style="font-size:0.8rem; color:#718096; margin-top:0.4rem; display:block;">'
+                        f'Análise baseada no prazo médio da carteira ({_prazo_med:.1f} ano(s)). '
+                        f'Para comparar cenários completos, acesse <em>Qual Ativo Escolher?</em>.</span>'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
