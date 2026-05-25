@@ -19,8 +19,9 @@ from core.financas import (
     aliquota_ir_renda_fixa,
     fv_mensal,
     pmt_para_meta,
+    analise_batalha,
 )
-from core.dados import obter_dados_completos, calcular_vna_em_data, buscar_selic_meta_bcb, buscar_selic_na_data, CATEGORIAS_TITULOS, TITULOS_CONFIG, TITULOS_BATALHA, timestamp_ultima_atualizacao, chave_cache_mercado
+from core.dados import obter_dados_completos, calcular_vna_em_data, buscar_selic_meta_bcb, buscar_selic_na_data, montar_catalogo_batalha, CATEGORIAS_TITULOS, TITULOS_CONFIG, TITULOS_BATALHA, timestamp_ultima_atualizacao, chave_cache_mercado
 from core.persistencia import carregar, salvar, inicializar_session
 from core.graficos import grafico_paradoxo, grafico_score
 import plotly.graph_objects as go
@@ -613,7 +614,8 @@ def render():
 
         _mc1, _mc2, _mc3, _mc4 = st.columns(4)
         with _mc1:
-            st.metric("Capital Investido", formatar_brl(total_cap), f"{len(portfolio)} posição(ões)")
+            _pos_label = "1 posição" if len(portfolio) == 1 else f"{len(portfolio)} posições"
+            st.metric("Capital Investido", formatar_brl(total_cap), _pos_label)
         with _mc2:
             st.metric("MaM Consolidado", formatar_brl(total_mam),
                       f"{var_total:+.1f}% vs capital",
@@ -710,6 +712,97 @@ def render():
                     text="Alocação por Prazo", font=dict(size=12, color="#e0e0e0"), x=0.5, xanchor="center",
                 ))
                 st.plotly_chart(_fig_p, use_container_width=True)
+
+        # ---- Recomendação de Diversificação ----------------------------------------
+        if len(portfolio) >= 2:
+            _GRUPO = {
+                "ipca_mais": "ipca_mais",
+                "selic":     "selic",
+                "pre":       "pre",
+                "cdb":       "credito",
+                "lci":       "credito",
+                "lca":       "credito",
+            }
+            _totais_grupo: dict = {}
+            for _p in portfolio:
+                _g = _GRUPO.get(_p.get("tipo_asset", "ipca_mais"), "ipca_mais")
+                _totais_grupo[_g] = _totais_grupo.get(_g, 0.0) + _p["valor"]
+
+            _tipo_conc = next(
+                (_g for _g, _v in _totais_grupo.items() if _v / total_cap > 0.70),
+                None,
+            )
+
+            if _tipo_conc:
+                _pct_conc   = _totais_grupo[_tipo_conc] / total_cap
+                _prazo_med  = sum(_p.get("anos", 3) * _p["valor"] for _p in portfolio) / total_cap
+                _selic_ref  = buscar_selic_meta_bcb()
+                _ipca_ref   = st.session_state.get("bat_ipca", 5.0)
+
+                _GAP = {
+                    "ipca_mais": "selic",
+                    "selic":     "ipca_mais",
+                    "pre":       "ipca_mais",
+                    "credito":   "selic",
+                }
+                _NOME_CONC = {
+                    "ipca_mais": "IPCA+",
+                    "selic":     "Pós-Fixado (Selic)",
+                    "pre":       "Pré-Fixado",
+                    "credito":   "Crédito Privado (CDB/LCI/LCA)",
+                }
+                _MOTIVO = {
+                    "ipca_mais": "toda a carteira fica exposta ao risco de Marcação a Mercado — um título Selic garante liquidez imediata sem variação de preço.",
+                    "selic":     "carteira 100% pós-fixada perde poder de compra se a Selic cair — um IPCA+ trava um ganho real acima da inflação.",
+                    "pre":       "Prefixado concentrado fica vulnerável a surpresas de inflação — um IPCA+ garante o ganho real independente do IPCA.",
+                    "credito":   "crédito privado carrega risco do emissor — um Tesouro Selic oferece segurança soberana e liquidez diária.",
+                }
+
+                _tipo_rec  = _GAP[_tipo_conc]
+                _cat_rec   = montar_catalogo_batalha(df_titulos, _selic_ref)
+                _cands     = [t for t in _cat_rec if t["tipo"] == _tipo_rec][:6]
+
+                _melhor, _melhor_score = None, -999.0
+                for _ct in _cands:
+                    _an = analise_batalha(
+                        nome       = _ct["nome"],
+                        tipo       = _ct["tipo"],
+                        taxa       = _ct["taxa"],
+                        anos_total = _ct["anos_total"],
+                        anos_saida = float(max(1, round(_prazo_med))),
+                        ipca       = _ipca_ref,
+                        choque     = 1.0,
+                        com_ir     = True,
+                        selic      = _selic_ref,
+                    )
+                    _sc = _an["ret_neu"] / max(_an["risco_std"], 0.01)
+                    if _sc > _melhor_score:
+                        _melhor_score, _melhor = _sc, (_ct, _an)
+
+                if _melhor:
+                    _ct, _an = _melhor
+                    _nome_rec = _ct["nome"].replace("Tesouro ", "")
+                    if _tipo_rec == "selic":
+                        _taxa_rec = f"~{_selic_ref:.2f}% a.a."
+                    elif _tipo_rec == "ipca_mais":
+                        _taxa_rec = f"IPCA+ {_ct['taxa']:.2f}% a.a."
+                    else:
+                        _taxa_rec = f"{_ct['taxa']:.2f}% a.a."
+
+                    st.markdown(
+                        f'<div class="alerta-mercado" style="margin-top:0.8rem;">'
+                        f'⚠️ <strong>{_pct_conc*100:.0f}% da carteira está em {_NOME_CONC[_tipo_conc]}:</strong> '
+                        f'{_MOTIVO[_tipo_conc]}<br><br>'
+                        f'💡 <strong>Sugestão para diversificar → {_nome_rec}</strong> &nbsp;·&nbsp; '
+                        f'{_taxa_rec} &nbsp;·&nbsp; '
+                        f'Retorno estimado: <strong>{_an["ret_neu"]:.1f}% a.a.</strong> (neutro, com IR) &nbsp;·&nbsp; '
+                        f'Risco MaM: <strong>{_an["risco_label"]}</strong> &nbsp;·&nbsp; '
+                        f'horizonte considerado: <strong>{_prazo_med:.1f} ano(s)</strong>.<br>'
+                        f'<span style="font-size:0.8rem; color:#718096;">Para análise completa com cenários, acesse '
+                        f'<em>Qual Ativo Escolher?</em> no menu lateral.</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
 
         # Tabela
         rows_p = []
