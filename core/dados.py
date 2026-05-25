@@ -172,16 +172,22 @@ def buscar_selic_meta_bcb() -> float:
 @st.cache_data(ttl=3600 * 24)
 def buscar_selic_na_data(data_compra: "date") -> float:
     """
-    Retorna a meta Selic (COPOM) vigente na data de compra informada.
-    Busca BCB Série 1178 nos 90 dias anteriores à data e retorna o último valor.
-    Fallback: 14.75% se a API estiver indisponível.
+    Retorna a taxa Selic efetiva (% a.a., base 252) na data de compra.
+
+    Usa BCB Série 4189 — "Taxa Selic" diária já anualizada, que reflete
+    o valor exato acumulado pelo Tesouro Selic naquele pregão. É diferente
+    da meta COPOM (Série 1178): a efetiva é o que o título realmente rendeu,
+    a meta é a decisão formal do comitê (diferença típica < 5 bp).
+
+    Busca os 10 dias anteriores à data para garantir que há pelo menos
+    um dia útil no intervalo. Fallback: 14.75%.
     """
     from datetime import timedelta
     try:
-        ini = (data_compra - timedelta(days=90)).strftime("%d/%m/%Y")
+        ini = (data_compra - timedelta(days=10)).strftime("%d/%m/%Y")
         fim = data_compra.strftime("%d/%m/%Y")
         url = (
-            f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados"
+            f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.4189/dados"
             f"?formato=json&dataInicial={ini}&dataFinal={fim}"
         )
         resp = requests.get(url, timeout=10)

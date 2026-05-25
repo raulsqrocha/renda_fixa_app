@@ -523,7 +523,7 @@ def render():
             )
 
         if _tipo == "selic":
-            st.caption(f"✅ Taxa Selic preenchida automaticamente com a meta COPOM vigente em {_pdat.strftime('%d/%m/%Y')} — editável se necessário.")
+            st.caption(f"✅ Taxa Selic efetiva em {_pdat.strftime('%d/%m/%Y')} preenchida automaticamente via BCB — editável se necessário.")
 
         if _tipo in ("cdb", "lci", "lca"):
             _pvenc_date = st.date_input(
