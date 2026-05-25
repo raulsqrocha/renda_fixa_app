@@ -153,6 +153,22 @@ def timestamp_ultima_atualizacao(chave: str) -> datetime:
 # IPCA — Banco Central do Brasil
 # ---------------------------------------------------------------------------
 
+@st.cache_data(ttl=3600 * 4)
+def buscar_selic_meta_bcb() -> float:
+    """
+    Retorna a meta da Selic mais recente (BCB Série 1178), em % a.a.
+    TTL de 4 horas — muda apenas nas reuniões do COPOM (~a cada 45 dias).
+    Fallback: 13.25% se a API estiver indisponível.
+    """
+    try:
+        url  = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados/ultimos/1?formato=json"
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        return float(resp.json()[0]["valor"])
+    except Exception:
+        return 13.25
+
+
 @st.cache_data(ttl=3600 * 8)
 def buscar_ipca_bcb() -> pd.DataFrame:
     """

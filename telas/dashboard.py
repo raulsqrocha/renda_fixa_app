@@ -20,7 +20,7 @@ from core.financas import (
     fv_mensal,
     pmt_para_meta,
 )
-from core.dados import obter_dados_completos, calcular_vna_em_data, CATEGORIAS_TITULOS, TITULOS_CONFIG, TITULOS_BATALHA, timestamp_ultima_atualizacao, chave_cache_mercado
+from core.dados import obter_dados_completos, calcular_vna_em_data, buscar_selic_meta_bcb, CATEGORIAS_TITULOS, TITULOS_CONFIG, TITULOS_BATALHA, timestamp_ultima_atualizacao, chave_cache_mercado
 from core.persistencia import carregar, salvar, inicializar_session
 from core.graficos import grafico_paradoxo, grafico_score
 import plotly.graph_objects as go
@@ -77,11 +77,17 @@ def render():
                 df_titulos["nome"].str.contains("IPCA\\+", na=False, regex=True)
                 & ~df_titulos["nome"].str.contains("Semestrais", na=False)
             ]
+        _selic_meta = buscar_selic_meta_bcb()
         _pc1, _pc2, _pc3 = st.columns(3)
         with _pc1:
             if not _m_sl.empty:
-                st.metric("💰 Tesouro Selic", f"{_m_sl.iloc[0]['taxa_compra']:.2f}% a.a.",
-                          "Pós-fixado · sem risco MaM", delta_color="off")
+                _spread_sl = _m_sl.iloc[0]["taxa_compra"]
+                st.metric(
+                    "💰 Tesouro Selic",
+                    f"~{_selic_meta:.2f}% a.a.",
+                    f"Pós-fixado · Selic {_selic_meta:.2f}% + spread {_spread_sl:.2f}%",
+                    delta_color="off",
+                )
         with _pc2:
             if not _m_pre.empty:
                 _p = _m_pre.iloc[0]
