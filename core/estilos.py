@@ -162,7 +162,7 @@ def sidebar_info() -> None:
             padding:0.8rem 1rem; margin-bottom:1.2rem;">
   <div style="font-size:0.68rem; color:#38A169; text-transform:uppercase;
               letter-spacing:0.08em; margin-bottom:0.45rem; font-weight:600;">Seu Portfólio</div>
-  <div style="font-size:0.68rem; color:#718096; margin-bottom:0.45rem;">{len(portfolio)} posição(ões)</div>
+  <div style="font-size:0.68rem; color:#718096; margin-bottom:0.45rem;">{"1 posição" if len(portfolio) == 1 else f"{len(portfolio)} posições"}</div>
   <div style="display:flex; justify-content:space-between; font-size:0.76rem; margin-bottom:0.2rem;">
     <span style="color:#718096;">Capital</span>
     <span style="color:#FAFAFA;">{formatar_brl(total_cap)}</span>
