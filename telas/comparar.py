@@ -167,6 +167,7 @@ def render():
     ]
 
     melhor = max(produtos, key=lambda p: p["Retorno Líquido"])
+    # CDB pode ter retorno maior mas risco de crédito diferente — avisamos no insight
 
     # -----------------------------------------------------------------------
     # Cards de resultado
@@ -272,22 +273,24 @@ def render():
 
     with col_eq1:
         st.metric(
-            "CDB equivalente ao LCI",
+            "CDB mínimo p/ empatar LCI",
             f"{equiv_lci:.2f}% a.a.",
             f"LCI isento a {taxa_lci:.2f}% a.a.",
             delta_color="off",
+            help="Taxa bruta que o CDB precisa pagar para, após IR, igualar o LCI isento.",
         )
         st.caption(
-            f"Para vencer o LCI a {taxa_lci:.2f}%, um CDB precisa pagar "
-            f"**{equiv_lci:.2f}% a.a. bruto** (você paga {aliq_ir*100:.1f}% IR, ficando com "
-            f"{_taxa_equivalente_isento(equiv_lci/100, aliq_ir)*100:.2f}%)."
+            f"CDB abaixo de **{equiv_lci:.2f}% a.a.** perde para o LCI de {taxa_lci:.2f}% "
+            f"(após {aliq_ir*100:.1f}% IR, CDB fica com "
+            f"{_taxa_equivalente_isento(equiv_lci/100, aliq_ir)*100:.2f}% líquido)."
         )
     with col_eq2:
         st.metric(
-            "CDB equivalente ao LCA",
+            "CDB mínimo p/ empatar LCA",
             f"{equiv_lca:.2f}% a.a.",
             f"LCA isento a {taxa_lca:.2f}% a.a.",
             delta_color="off",
+            help="Taxa bruta que o CDB precisa pagar para, após IR, igualar o LCA isento.",
         )
     with col_eq3:
         cdb_liq_equiv = _taxa_equivalente_isento(taxa_cdb / 100, aliq_ir) * 100
@@ -306,13 +309,21 @@ def render():
     vf_melhor = capital * (1 + melhor["Retorno Líquido"])
     lucro_melhor = vf_melhor - capital
 
+    _nome_melhor = melhor["Produto"]
+    _fgc_aviso = (
+        "\n\n⚠️ **Atenção:** o CDB lidera pelo retorno, mas leve em conta o risco de crédito "
+        "da instituição emissora. O FGC cobre até **R$ 250 mil por CPF por instituição** — "
+        "acima disso, não há garantia. O Tesouro Direto tem garantia soberana (Governo Federal), "
+        "sem limite de valor."
+        if _nome_melhor == "CDB"
+        else "\n\n*LCI/LCA têm cobertura FGC até R$ 250k por inst. O Tesouro tem garantia soberana.*"
+    )
     st.info(
-        f"**Melhor opção no horizonte de {horizonte} ano(s):** {melhor['Produto']} "
-        f"com **{melhor_retorno:.2f}% líquido** acumulado. "
+        f"**Melhor retorno líquido no horizonte de {horizonte} ano(s):** {_nome_melhor} "
+        f"com **{melhor_retorno:.2f}%** acumulado. "
         f"{formatar_brl(capital)} → **{formatar_brl(vf_melhor)}** "
-        f"(lucro: {formatar_brl(lucro_melhor)}).\n\n"
-        f"⚠️ *LCI/LCA têm cobertura do FGC até R$ 250k por instituição. "
-        f"CDB também tem cobertura FGC. O Tesouro tem garantia do Governo Federal (risco soberano).*",
+        f"(lucro: {formatar_brl(lucro_melhor)})."
+        + _fgc_aviso,
         icon="💡",
     )
 
@@ -322,7 +333,7 @@ def render():
         "cmp_ipca":           st.session_state.get("cmp_ipca", 5.0),
         "cmp_taxa_ipca_plus": st.session_state.get("cmp_taxa_ipca_plus", 7.0),
         "cmp_taxa_pre":       st.session_state.get("cmp_taxa_pre", 14.5),
-        "cmp_selic":          st.session_state.get("cmp_selic", 13.25),
+        "cmp_selic":          st.session_state.get("cmp_selic", 14.75),
         "cmp_cdb":            st.session_state.get("cmp_cdb", 14.0),
         "cmp_lci":            st.session_state.get("cmp_lci", 11.5),
         "cmp_lca":            st.session_state.get("cmp_lca", 11.2),

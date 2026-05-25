@@ -56,12 +56,21 @@ def render():
     with st.spinner("Carregando dados do Tesouro Direto e BCB..."):
         df_ipca, df_titulos, vna = obter_dados_completos()
 
-    _ts   = timestamp_ultima_atualizacao(chave_cache_mercado())
-    _hora = _ts.strftime("%H:%M")
-    if not df_titulos.empty:
-        st.caption(f"✅ Dados ao vivo — Tesouro Direto · carregados às **{_hora}** (atualiza a cada 2h)")
+    _ts      = timestamp_ultima_atualizacao(chave_cache_mercado())
+    _hora    = _ts.strftime("%H:%M")
+    _ipca_ok = (
+        not df_ipca.empty
+        and df_ipca["data"].max() >= pd.Timestamp(date.today() - timedelta(days=60))
+    )
+    if not df_titulos.empty and _ipca_ok:
+        st.caption(f"✅ Dados ao vivo — Tesouro Direto e BCB · carregados às **{_hora}** (atualiza a cada 2h)")
+    elif not df_titulos.empty:
+        st.caption(
+            f"⚠️ Preços ao vivo, mas IPCA em modo offline (série histórica local até {df_ipca['data'].max().strftime('%b/%Y')}) "
+            f"· carregados às **{_hora}**"
+        )
     else:
-        st.caption("⚠️ Modo offline — usando dados de referência")
+        st.caption("⚠️ Modo offline — usando dados de referência para preços e IPCA")
 
     # -----------------------------------------------------------------------
     # Cards de taxa ao vivo — pulso do mercado
@@ -714,7 +723,7 @@ def render():
                 st.plotly_chart(_fig_p, use_container_width=True)
 
         # ---- Recomendação de Diversificação ----------------------------------------
-        if len(portfolio) >= 2:
+        if len(portfolio) >= 1:
             _GRUPO = {
                 "ipca_mais": "ipca_mais",
                 "selic":     "selic",
@@ -1142,9 +1151,16 @@ def render():
 
             with col1:
                 st.metric(
-                    "Variação do Dia (MaM)", f"{variacao:+.2f}%", f"{variacao:.2f}%",
+                    "Variação do Dia (est.)", f"{variacao:+.2f}%", f"{variacao:.2f}%",
                     delta_color="normal",
-                    help="Oscilação estimada do PU de mercado hoje vs. ontem",
+                    help=(
+                        "**Variação estimada** do PU de mercado hoje vs. ontem.\n\n"
+                        "O Tesouro Direto não publica a taxa de ontem em tempo real — "
+                        "essa oscilação é gerada por um modelo estocástico calibrado à "
+                        "duration do título (seed determinístico = mesmo valor no mesmo dia). "
+                        "Serve para ilustrar a volatilidade diária típica do MaM, "
+                        "**não é dado de mercado real**."
+                    ),
                 )
 
             with col2:

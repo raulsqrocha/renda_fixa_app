@@ -71,22 +71,24 @@ html, body, [class*="css"] {
 
 /* ── Alertas e Badges ──────────────────────────────────────────────── */
 .alerta-mercado {
-    background: linear-gradient(135deg, #1a0808, #2d1515);
+    background: linear-gradient(135deg, #2a1010, #3d1c1c);
     border: 1px solid #E53E3E;
     border-left: 4px solid #E53E3E;
     border-radius: 8px;
     padding: 1rem 1.2rem;
     margin: 0.8rem 0;
     font-size: 0.92rem;
+    color: #FED7D7;
 }
 .badge-seguranca {
-    background: linear-gradient(135deg, #081a0a, #152d18);
+    background: linear-gradient(135deg, #0e2412, #1a3a1f);
     border: 1px solid #38A169;
     border-left: 4px solid #38A169;
     border-radius: 8px;
     padding: 1rem 1.2rem;
     margin: 0.8rem 0;
     font-size: 0.92rem;
+    color: #C6F6D5;
 }
 
 /* ── Sidebar ────────────────────────────────────────────────────────── */
