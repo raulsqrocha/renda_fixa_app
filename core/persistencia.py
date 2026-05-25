@@ -1,16 +1,22 @@
 """
 Persistência de preferências do usuário entre sessões/refreshes.
 
-Salva e carrega um JSON simples em disco. Ao iniciar, injeta os valores
-salvos no st.session_state antes de cada widget ser renderizado.
+Em ambiente local: salva e carrega um JSON simples em disco.
+Em Streamlit Cloud (HOME=/home/appuser): usa apenas st.session_state —
+o arquivo não é gravado, evitando que dados pessoais (portfólio) sejam
+compartilhados entre visitantes do app público.
 """
 
+import os
 import json
 import streamlit as st
 from pathlib import Path
 from datetime import date
 
 _PREFS_FILE = Path(__file__).parent.parent / "user_prefs.json"
+
+# True quando rodando no Streamlit Cloud (filesystem compartilhado entre usuários)
+_IS_CLOUD = os.environ.get("HOME") == "/home/appuser"
 
 
 def _default_prefs() -> dict:
@@ -87,9 +93,9 @@ def _default_prefs() -> dict:
 
 
 def carregar() -> dict:
-    """Lê o JSON de disco. Retorna defaults se não existir."""
+    """Lê o JSON de disco. Em cloud, retorna apenas defaults (sem leitura de arquivo)."""
     defaults = _default_prefs()
-    if not _PREFS_FILE.exists():
+    if _IS_CLOUD or not _PREFS_FILE.exists():
         return defaults
     try:
         with _PREFS_FILE.open("r", encoding="utf-8") as f:
@@ -108,7 +114,9 @@ def carregar() -> dict:
 
 
 def salvar(prefs: dict) -> None:
-    """Faz merge com o JSON existente e grava. Datas viram string ISO."""
+    """Faz merge com o JSON existente e grava. Em cloud, é no-op."""
+    if _IS_CLOUD:
+        return
     # Lê o estado atual para não sobrescrever chaves de outras telas
     atual = carregar()
     atual.update(prefs)
