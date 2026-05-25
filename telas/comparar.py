@@ -8,23 +8,15 @@ mais renda real — um título público ou um produto bancário isentos/tributad
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import date
 
 from core.financas import (
     aliquota_ir_renda_fixa,
-    retorno_liquido_ir,
     formatar_brl,
 )
 from core.persistencia import carregar, salvar, inicializar_session
 from core.dados import timestamp_ultima_atualizacao, chave_cache_mercado
 
-# Cor palette (compartilhada com o restante do app)
-_VERDE    = "#38A169"
-_VERMELHO = "#E53E3E"
-_AZUL     = "#4299E1"
-_AMARELO  = "#ECC94B"
-_LARANJA  = "#DD6B20"
-_FUNDO    = "#0E1117"
+_FUNDO = "#0E1117"
 
 
 def _taxa_equivalente_isento(taxa_tributada: float, aliq_ir: float) -> float:
@@ -166,12 +158,12 @@ def render():
         return (1 + ret_liq) / (1 + ipca_f) ** H - 1
 
     produtos = [
-        {"Produto": "Tesouro IPCA+",    "Retorno Bruto": ret_ipca_bruto,  "Retorno Líquido": ret_ipca_liq,  "IR": aliq_ir,    "Isento": False},
-        {"Produto": "Tesouro Prefixado","Retorno Bruto": ret_pre_bruto,   "Retorno Líquido": ret_pre_liq,   "IR": aliq_ir,    "Isento": False},
-        {"Produto": "Tesouro Selic",    "Retorno Bruto": ret_selic_bruto, "Retorno Líquido": ret_selic_liq, "IR": aliq_ir,    "Isento": False},
-        {"Produto": "CDB",              "Retorno Bruto": ret_cdb_bruto,   "Retorno Líquido": ret_cdb_liq,   "IR": aliq_ir,    "Isento": False},
-        {"Produto": "LCI",              "Retorno Bruto": ret_lci,         "Retorno Líquido": ret_lci,       "IR": 0.0,        "Isento": True},
-        {"Produto": "LCA",              "Retorno Bruto": ret_lca,         "Retorno Líquido": ret_lca,       "IR": 0.0,        "Isento": True},
+        {"Produto": "Tesouro IPCA+",    "taxa_str": f"IPCA+ {taxa_ipca_plus:.2f}%",  "Retorno Bruto": ret_ipca_bruto,  "Retorno Líquido": ret_ipca_liq,  "IR": aliq_ir, "Isento": False},
+        {"Produto": "Tesouro Prefixado","taxa_str": f"{taxa_pre:.2f}%",               "Retorno Bruto": ret_pre_bruto,   "Retorno Líquido": ret_pre_liq,   "IR": aliq_ir, "Isento": False},
+        {"Produto": "Tesouro Selic",    "taxa_str": f"Selic {selic:.2f}%",            "Retorno Bruto": ret_selic_bruto, "Retorno Líquido": ret_selic_liq, "IR": aliq_ir, "Isento": False},
+        {"Produto": "CDB",              "taxa_str": f"{taxa_cdb:.2f}%",               "Retorno Bruto": ret_cdb_bruto,   "Retorno Líquido": ret_cdb_liq,   "IR": aliq_ir, "Isento": False},
+        {"Produto": "LCI",              "taxa_str": f"{taxa_lci:.2f}% (isento)",      "Retorno Bruto": ret_lci,         "Retorno Líquido": ret_lci,       "IR": 0.0,     "Isento": True},
+        {"Produto": "LCA",              "taxa_str": f"{taxa_lca:.2f}% (isento)",      "Retorno Bruto": ret_lca,         "Retorno Líquido": ret_lca,       "IR": 0.0,     "Isento": True},
     ]
 
     melhor = max(produtos, key=lambda p: p["Retorno Líquido"])
@@ -215,7 +207,7 @@ def render():
         real   = _real(p["Retorno Líquido"])
         rows.append({
             "Produto":            p["Produto"],
-            "Taxa Bruta a.a.":    _taxa_str(p),
+            "Taxa Bruta a.a.":    p["taxa_str"],
             "IR":                 "Isento" if p["Isento"] else f"{p['IR']*100:.1f}%",
             "Retorno Bruto":      f"{p['Retorno Bruto']*100:.2f}%",
             "Retorno Líquido":    f"{p['Retorno Líquido']*100:.2f}%",
@@ -337,18 +329,3 @@ def render():
     })
 
 
-def _taxa_str(p: dict) -> str:
-    nome = p["Produto"]
-    if nome == "Tesouro IPCA+":
-        return f"IPCA+ {st.session_state.get('cmp_taxa_ipca_plus', 7.0):.2f}%"
-    if nome == "Tesouro Prefixado":
-        return f"{st.session_state.get('cmp_taxa_pre', 14.5):.2f}%"
-    if nome == "Tesouro Selic":
-        return f"Selic {st.session_state.get('cmp_selic', 13.25):.2f}%"
-    if nome == "CDB":
-        return f"{st.session_state.get('cmp_cdb', 14.0):.2f}%"
-    if nome == "LCI":
-        return f"{st.session_state.get('cmp_lci', 11.5):.2f}% (isento)"
-    if nome == "LCA":
-        return f"{st.session_state.get('cmp_lca', 11.2):.2f}% (isento)"
-    return "—"

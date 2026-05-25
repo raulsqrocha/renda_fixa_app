@@ -18,8 +18,16 @@ from core.financas import (
     retorno_saida_antecipada,
     retorno_hold_to_mat_reinvestido,
     carteira_mista,
+    gerar_portfolios_aleatorios,
 )
-from core.graficos import grafico_markowitz, grafico_cenarios_batalha
+from core.graficos import grafico_markowitz, grafico_cenarios_batalha, grafico_retorno_por_horizonte
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _analise_cached(nome, tipo, taxa, anos_total, anos_saida, ipca, choque, com_ir, selic):
+    return analise_batalha(nome=nome, tipo=tipo, taxa=taxa, anos_total=anos_total,
+                           anos_saida=anos_saida, ipca=ipca, choque=choque,
+                           com_ir=com_ir, selic=selic)
 
 
 _TIPO_EMOJI = {"selic": "💰", "pre": "📌", "ipca_mais": "🛡️"}
@@ -53,6 +61,28 @@ def _risco_expo(tipo, anos_expo):
 
 def _winner(analises: list) -> dict:
     return max(analises, key=lambda a: a["ret_neu"] / max(a["risco_std"], 0.01))
+
+
+_PERFIS = ["Conservador", "Moderado", "Arrojado"]
+
+_PERFIL_HELP = (
+    "**Conservador 🟢** — minimiza o risco de Marcação a Mercado. "
+    "Prefere o título com menor volatilidade entre os cenários.\n\n"
+    "**Moderado 🟡** — melhor relação retorno/risco (índice Sharpe). "
+    "Padrão recomendado para a maioria dos investidores.\n\n"
+    "**Arrojado 🔴** — maximiza o retorno no cenário favorável. "
+    "Aceita maior volatilidade em troca do maior potencial de ganho."
+)
+
+_PERFIL_EMOJI = {"Conservador": "🟢", "Moderado": "🟡", "Arrojado": "🔴"}
+
+
+def _winner_por_perfil(analises: list, perfil: str) -> dict:
+    if perfil == "Conservador":
+        return min(analises, key=lambda a: a["risco_std"])
+    if perfil == "Arrojado":
+        return max(analises, key=lambda a: a["ret_fav"])
+    return _winner(analises)
 
 
 def _insight_texto(w: dict, horizonte: int, ipca: float, com_ir: bool) -> str:
@@ -166,6 +196,21 @@ def render():
         if com_ir:
             aliq = aliquota_ir_renda_fixa(horizonte)
             st.caption(f"IR aplicado: **{aliq*100:.1f}%** sobre o lucro (horizonte = {horizonte} ano(s))")
+
+        st.markdown("**Perfil de Risco**")
+        perfil = st.radio(
+            "Perfil",
+            options=_PERFIS,
+            captions=[
+                "Minimiza risco de MaM — prefere Selic e curto prazo",
+                "Melhor retorno/risco (Índice Sharpe) — recomendado",
+                "Maximiza potencial de ganho — aceita volatilidade",
+            ],
+            index=_PERFIS.index(st.session_state.get("bat_perfil", "Moderado")),
+            horizontal=False,
+            key="bat_perfil",
+            label_visibility="collapsed",
+        )
 
     with col_macro:
         st.markdown("**Projeção Macroeconômica**")
@@ -523,7 +568,7 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
 
     titulos_sel = [t for t in catalogo if t["nome"] in selecionados]
     analises = [
-        analise_batalha(
+        _analise_cached(
             nome       = t["nome"],
             tipo       = t["tipo"],
             taxa       = t["taxa"],
@@ -537,16 +582,18 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
         for t in titulos_sel
     ]
 
-    vencedor  = _winner(analises)
+    vencedor  = _winner_por_perfil(analises, perfil)
     aliq_str  = f"{aliquota_ir_renda_fixa(H)*100:.1f}%" if com_ir else "bruto"
 
-    # Carteira Mista: 70% vencedor + 30% melhor Selic disponível na seleção
+    # Carteira Mista: só para perfil Moderado (Conservador e Arrojado não misturam)
     selic_analise = next((a for a in analises if a["tipo"] == "selic"), None)
-    mix = (
-        carteira_mista(vencedor, selic_analise, peso_principal=0.70)
-        if selic_analise and vencedor["tipo"] != "selic"
-        else None
-    )
+    if perfil == "Moderado" and selic_analise and vencedor["tipo"] != "selic":
+        mix = carteira_mista(vencedor, selic_analise, peso_principal=0.70)
+    else:
+        mix = None
+
+    # Monte Carlo para fronteira eficiente real
+    portfolios_mc = gerar_portfolios_aleatorios(analises, n=400)
 
     # -----------------------------------------------------------------------
     # Mensagens Adaptativas por Cenário
@@ -629,9 +676,45 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
     # -----------------------------------------------------------------------
     col_g1, col_g2 = st.columns(2)
     with col_g1:
-        st.plotly_chart(grafico_markowitz(analises, carteira_mix=mix), use_container_width=True)
+        st.plotly_chart(
+            grafico_markowitz(analises, carteira_mix=mix, portfolios_mc=portfolios_mc),
+            use_container_width=True,
+        )
     with col_g2:
         st.plotly_chart(grafico_cenarios_batalha(analises), use_container_width=True)
+
+    # -----------------------------------------------------------------------
+    # Análise por Horizonte
+    # -----------------------------------------------------------------------
+    st.divider()
+    st.subheader("📈  Qual Título Performa Melhor em Cada Horizonte?")
+    st.caption(
+        "Retorno neutro esperado para cada título em diferentes horizontes de saída. "
+        "A banda sombreada mostra o intervalo entre o cenário adverso e favorável."
+    )
+
+    _HORIZONS = [1, 2, 3, 5, 7, 10, 15]
+    _res_horizonte: dict = {}
+    for _h in _HORIZONS:
+        _res_horizonte[_h] = [
+            _analise_cached(
+                nome=t["nome"], tipo=t["tipo"], taxa=t["taxa"],
+                anos_total=t["anos_total"], anos_saida=float(_h),
+                ipca=ipca_pct, choque=choque_pp, com_ir=com_ir, selic=selic_pct,
+            )
+            for t in titulos_sel
+        ]
+
+    st.plotly_chart(
+        grafico_retorno_por_horizonte(_res_horizonte, horizonte),
+        use_container_width=True,
+    )
+    st.caption(
+        "Linha sólida: título ainda em carrego — taxa original garantida. "
+        "Linha tracejada (···): título já venceu nesse horizonte — retorno é uma mistura da taxa original "
+        "até o vencimento + Selic pelo período restante. "
+        "Pontos de cruzamento revelam quando um título passa a ser melhor que outro."
+    )
 
     st.divider()
 
@@ -639,6 +722,12 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
     # Recomendação
     # -----------------------------------------------------------------------
     st.subheader("🎯  Recomendação")
+    st.caption(
+        f"Critério ativo: {_PERFIL_EMOJI[perfil]} **{perfil}** — "
+        + ("minimiza risco de MaM" if perfil == "Conservador"
+           else "maximiza retorno no cenário favorável" if perfil == "Arrojado"
+           else "melhor relação retorno/risco (Sharpe)")
+    )
     st.markdown(
         f'<div class="badge-seguranca">💡 {_insight_texto(vencedor, horizonte, ipca_pct, com_ir)}</div>',
         unsafe_allow_html=True,
@@ -698,6 +787,7 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
     linhas = []
     for a in analises:
         venc_str = next(t["vencimento"].strftime("%d/%m/%Y") for t in titulos_sel if t["nome"] == a["nome"])
+        score = a["ret_neu"] / max(a["risco_std"], 0.01)
         linhas.append({
             "Título":              a["nome"].replace("Tesouro ", "") + (" 🏆" if a["nome"] == vencedor["nome"] else ""),
             "Vencimento":          venc_str,
@@ -705,11 +795,13 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
             "Retorno Adverso":     a["ret_adv"],
             "Retorno Favorável":   a["ret_fav"],
             "Ganho Real (%)":      a["ret_real"],
+            "Valor Final (R$)":    capital * (1 + a["ret_neu"] / 100) ** H,
             "Risco (σ)":           a["risco_std"],
+            "Score":               score,
             "Exposição MaM":       a["risco_label"],
         })
 
-    df_tab      = pd.DataFrame(linhas)
+    df_tab       = pd.DataFrame(linhas)
     idx_vencedor = next(i for i, a in enumerate(analises) if a["nome"] == vencedor["nome"])
 
     def _cor(row):
@@ -717,13 +809,12 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
             return ["background-color: #2d2310; color: #fbd38d"] * len(row)
         return ["background-color: #1C2331; color: #FAFAFA"] * len(row)
 
-    num_cols = ["Retorno Neutro", "Retorno Adverso", "Retorno Favorável", "Ganho Real (%)", "Risco (σ)"]
-    styled = (
-        df_tab.style
-        .apply(_cor, axis=1)
-        .format({c: lambda v: f"{v:+.2f}%" for c in num_cols})
-    )
+    pct_cols = ["Retorno Neutro", "Retorno Adverso", "Retorno Favorável", "Ganho Real (%)", "Risco (σ)"]
+    fmt = {c: lambda v: f"{v:+.2f}%" for c in pct_cols}
+    fmt["Valor Final (R$)"] = lambda v: f"R$ {v:,.0f}".replace(",", ".")
+    fmt["Score"]            = lambda v: f"{v:.2f}"
 
+    styled = df_tab.style.apply(_cor, axis=1).format(fmt)
     st.dataframe(styled, use_container_width=True, hide_index=True)
 
     vf_neutro = capital * (1 + vencedor["ret_neu"] / 100) ** horizonte
@@ -752,4 +843,5 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
         "bat_selic":        st.session_state.get("bat_selic", 13.0),
         "bat_choque":       st.session_state.get("bat_choque", 1.0),
         "bat_selecionados": st.session_state.get("bat_selecionados", _DEFAULTS),
+        "bat_perfil":       st.session_state.get("bat_perfil", "Moderado"),
     })

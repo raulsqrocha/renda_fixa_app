@@ -10,6 +10,7 @@ Seções:
 
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 from datetime import date
 
 from core.financas import retorno_cenario_ipca, retorno_mam_antecipado, formatar_brl
@@ -469,11 +470,6 @@ que a taxa real mudou.
     _aba_di, _aba_ipca = st.tabs(["📐  DI Futuro — Curva de Juros", "📜  Retrospecto Histórico IPCA"])
 
     with _aba_di:
-    # -----------------------------------------------------------------------
-    # 3. DI Futuro — Curva de Juros
-    # -----------------------------------------------------------------------
-        st.subheader("📐  DI Futuro — Curva de Juros")
-
         with st.expander("📖  O que é o DI Futuro e por que ele importa?", expanded=True):
             col_exp1, col_exp2 = st.columns([3, 2])
 
@@ -598,21 +594,141 @@ seu poder de compra em **todos** esses cenários — é exatamente para isso que
             )
             st.caption("Fonte: Banco Central do Brasil — SGS Série 433 (IPCA mensal).")
 
+        st.divider()
+        st.markdown("#### 💹  E se você tivesse investido?")
+        st.caption(
+            "Simulação retroativa usando o IPCA real mês a mês. "
+            "As taxas do Pré-Fixado e Selic são inseridas como médias planas — simplificação educacional."
+        )
+        _rh_c1, _rh_c2 = st.columns([1, 2])
+        with _rh_c1:
+            _rh_cap = st.number_input(
+                "Capital inicial (R$)", min_value=100.0, max_value=1_000_000.0,
+                value=st.session_state.get("sim_rh_cap", 10_000.0),
+                step=1_000.0, format="%.2f", key="sim_rh_cap",
+            )
+            _anos_disp = sorted(df_ipca["data"].dt.year.unique().tolist())
+            _rh_ano_default = st.session_state.get("sim_rh_ano") or (
+                _anos_disp[max(0, len(_anos_disp) - 6)] if _anos_disp else 2020
+            )
+            _rh_ano = st.selectbox(
+                "Início da simulação", options=_anos_disp,
+                index=_anos_disp.index(_rh_ano_default) if _rh_ano_default in _anos_disp else max(0, len(_anos_disp) - 6),
+                key="sim_rh_ano",
+            )
+            _rh_ipca_plus = st.number_input(
+                "Taxa IPCA+ real (% a.a.)", min_value=0.5, max_value=20.0,
+                value=st.session_state.get("sim_rh_ipca_plus", taxa_atual_pct),
+                step=0.05, format="%.2f", key="sim_rh_ipca_plus",
+            )
+            _rh_pre = st.number_input(
+                "Pré-Fixado (% a.a. nominal)", min_value=1.0, max_value=30.0,
+                value=st.session_state.get("sim_rh_pre", 13.5),
+                step=0.1, format="%.2f", key="sim_rh_pre",
+            )
+            _rh_selic = st.number_input(
+                "Selic média (% a.a.)", min_value=1.0, max_value=30.0,
+                value=st.session_state.get("sim_rh_selic", 10.5),
+                step=0.1, format="%.2f", key="sim_rh_selic",
+            )
+        with _rh_c2:
+            _df_rh = df_ipca[df_ipca["data"].dt.year >= _rh_ano].copy().reset_index(drop=True)
+            if len(_df_rh) < 2:
+                st.info("Selecione um ano anterior para ver a simulação com dados suficientes.")
+            else:
+                _r_real  = (1 + _rh_ipca_plus / 100) ** (1 / 12) - 1
+                _r_pre   = (1 + _rh_pre   / 100) ** (1 / 12) - 1
+                _r_sel   = (1 + _rh_selic  / 100) ** (1 / 12) - 1
+                _r_poup_m = 0.005 if _rh_selic > 8.5 else _r_sel * 0.7
+
+                _start_date = _df_rh.iloc[0]["data"] - pd.DateOffset(months=1)
+                _datas_rh   = [_start_date]
+                _v_ip = _v_pre = _v_sel = _v_poup = _v_inf = _rh_cap
+                _ip_rh, _pre_rh, _sel_rh, _poup_rh, _inf_rh = (
+                    [_rh_cap], [_rh_cap], [_rh_cap], [_rh_cap], [_rh_cap]
+                )
+
+                for _, _row in _df_rh.iterrows():
+                    _ipca_m  = _row["valor"] / 100
+                    _v_ip   *= (1 + _ipca_m) * (1 + _r_real)
+                    _v_pre  *= (1 + _r_pre)
+                    _v_sel  *= (1 + _r_sel)
+                    _v_poup *= (1 + _r_poup_m)
+                    _v_inf  *= (1 + _ipca_m)
+                    _datas_rh.append(_row["data"])
+                    _ip_rh.append(_v_ip);   _pre_rh.append(_v_pre)
+                    _sel_rh.append(_v_sel); _poup_rh.append(_v_poup); _inf_rh.append(_v_inf)
+
+                _fig_rh = go.Figure()
+                _series_rh = {
+                    f"IPCA+ {_rh_ipca_plus:.1f}% real":    (_ip_rh,   "#a5d6a7", "solid"),
+                    f"Pré-Fixado {_rh_pre:.1f}%":          (_pre_rh,  "#ef9a9a", "solid"),
+                    f"Selic/CDI {_rh_selic:.1f}%":         (_sel_rh,  "#4fc3f7", "solid"),
+                    "Poupança (aprox.)":                    (_poup_rh, "#ce93d8", "dash"),
+                    "Inflação acumulada (poder de compra)": (_inf_rh,  "#718096", "dot"),
+                }
+                for _sname, (_svals, _scor, _sdash) in _series_rh.items():
+                    _fig_rh.add_trace(go.Scatter(
+                        x=_datas_rh, y=_svals, name=_sname, mode="lines",
+                        line=dict(color=_scor, width=2.0, dash=_sdash),
+                        hovertemplate=f"{_sname}: R$ %{{y:,.2f}}<extra></extra>",
+                    ))
+                _fig_rh.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    font_color="#e0e0e0",
+                    yaxis=dict(title="Valor acumulado (R$)", tickprefix="R$ ", tickformat=",.0f",
+                               gridcolor="rgba(255,255,255,0.06)"),
+                    xaxis=dict(gridcolor="rgba(255,255,255,0.04)"),
+                    legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=-0.35),
+                    margin=dict(t=10, b=60), height=360,
+                )
+                st.plotly_chart(_fig_rh, use_container_width=True)
+
+                _n_anos_rh = len(_df_rh) / 12
+                _rh_final  = {
+                    f"IPCA+ {_rh_ipca_plus:.1f}%": _v_ip,
+                    f"Pré {_rh_pre:.1f}%":          _v_pre,
+                    f"Selic {_rh_selic:.1f}%":      _v_sel,
+                    "Poupança":                      _v_poup,
+                }
+                _venc_rh  = max(_rh_final, key=_rh_final.get)
+                _cols_rh  = st.columns(4)
+                for (_nm, _vf), _col in zip(_rh_final.items(), _cols_rh):
+                    _ganho      = (_vf / _rh_cap - 1) * 100
+                    _ganho_real = (_vf / _v_inf - 1) * 100
+                    with _col:
+                        st.metric(
+                            f"{'🏆 ' if _nm == _venc_rh else ''}{_nm}",
+                            formatar_brl(_vf),
+                            f"+{_ganho:.0f}% nominal · {_ganho_real:+.0f}% real",
+                            delta_color="normal" if _ganho_real >= 0 else "inverse",
+                        )
+                st.caption(
+                    f"Período: {_rh_ano} → {_df_rh.iloc[-1]['data'].strftime('%b/%Y')} "
+                    f"({_n_anos_rh:.1f} anos). "
+                    "IPCA real mês a mês via BCB · Selic e Pré-Fixado como taxas médias planas."
+                )
+
     # Persiste preferências do usuário para o próximo refresh
     salvar({
-        "sim_categoria":     st.session_state.get("sim_categoria"),
-        "sim_titulo":        st.session_state.get("sim_titulo"),
-        "sim_ativos_sel":    st.session_state.get("sim_ativos_sel", []),
-        "sim_valor":         st.session_state.get("sim_valor", 10_000.0),
-        "sim_ipca_baixo":    st.session_state.get("sim_ipca_baixo", 3.0),
-        "sim_ipca_base":     st.session_state.get("sim_ipca_base", 4.5),
-        "sim_ipca_estresse": st.session_state.get("sim_ipca_estresse", 9.0),
-        "sim_prazo_saida":   st.session_state.get("sim_prazo_saida", 3),
-        "sim_curva_slope":   st.session_state.get("sim_curva_slope", 0.0),
-        "sim_di_jan27":      st.session_state.get("sim_di_jan27", 13.20),
-        "sim_di_jan28":      st.session_state.get("sim_di_jan28", 13.40),
-        "sim_di_jan29":      st.session_state.get("sim_di_jan29", 13.55),
-        "sim_di_jan31":      st.session_state.get("sim_di_jan31", 13.68),
-        "sim_di_jan33":      st.session_state.get("sim_di_jan33", 13.82),
-        "sim_di_jan35":      st.session_state.get("sim_di_jan35", 13.90),
+        "sim_categoria":      st.session_state.get("sim_categoria"),
+        "sim_titulo":         st.session_state.get("sim_titulo"),
+        "sim_ativos_sel":     st.session_state.get("sim_ativos_sel", []),
+        "sim_valor":          st.session_state.get("sim_valor", 10_000.0),
+        "sim_ipca_baixo":     st.session_state.get("sim_ipca_baixo", 3.0),
+        "sim_ipca_base":      st.session_state.get("sim_ipca_base", 4.5),
+        "sim_ipca_estresse":  st.session_state.get("sim_ipca_estresse", 9.0),
+        "sim_prazo_saida":    st.session_state.get("sim_prazo_saida", 3),
+        "sim_curva_slope":    st.session_state.get("sim_curva_slope", 0.0),
+        "sim_di_jan27":       st.session_state.get("sim_di_jan27", 13.20),
+        "sim_di_jan28":       st.session_state.get("sim_di_jan28", 13.40),
+        "sim_di_jan29":       st.session_state.get("sim_di_jan29", 13.55),
+        "sim_di_jan31":       st.session_state.get("sim_di_jan31", 13.68),
+        "sim_di_jan33":       st.session_state.get("sim_di_jan33", 13.82),
+        "sim_di_jan35":       st.session_state.get("sim_di_jan35", 13.90),
+        "sim_rh_cap":         st.session_state.get("sim_rh_cap",         10_000.0),
+        "sim_rh_pre":         st.session_state.get("sim_rh_pre",         13.5),
+        "sim_rh_selic":       st.session_state.get("sim_rh_selic",       10.5),
+        "sim_rh_ipca_plus":   st.session_state.get("sim_rh_ipca_plus",   taxa_atual_pct),
+        "sim_rh_ano":         st.session_state.get("sim_rh_ano",         None),
     })

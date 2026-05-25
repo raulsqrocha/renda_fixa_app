@@ -430,18 +430,21 @@ def grafico_curva_di(dados_di: list) -> go.Figure:
 
 
 # ---------------------------------------------------------------------------
-# Tela 3 — Batalha de Cenários
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
 # Tela 3 — Qual Tesouro é Melhor para Mim?
 # ---------------------------------------------------------------------------
 
-_TIPO_COR = {"selic": AZUL, "pre": LARANJA, "ipca_mais": VERDE}
+_TIPO_COR  = {"selic": AZUL, "pre": LARANJA, "ipca_mais": VERDE}
 _TIPO_NOME = {"selic": "Pós-Fixado (Selic)", "pre": "Pré-Fixado", "ipca_mais": "IPCA+"}
 
+_CORES_ATIVO = [VERDE, AZUL, LARANJA, AMARELO, "#B794F4", "#F6AD55", "#68D391", "#63B3ED"]
 
-def grafico_markowitz(analises: list, carteira_mix: dict | None = None) -> go.Figure:
+
+def _hex_to_rgb(hex_color: str) -> str:
+    h = hex_color.lstrip("#")
+    return ", ".join(str(int(h[i:i+2], 16)) for i in (0, 2, 4))
+
+
+def grafico_markowitz(analises: list, carteira_mix: dict | None = None, portfolios_mc: list | None = None) -> go.Figure:
     """
     Fronteira de Markowitz educacional: Retorno Esperado vs. Risco de MaM.
 
@@ -452,6 +455,19 @@ def grafico_markowitz(analises: list, carteira_mix: dict | None = None) -> go.Fi
 
     xs = [a["risco_std"] for a in analises]
     ys = [a["ret_neu"]   for a in analises]
+
+    # Nuvem Monte Carlo de portfólios aleatórios
+    if portfolios_mc and len(portfolios_mc) > 2:
+        xs_mc = [p["risco_std"] for p in portfolios_mc]
+        ys_mc = [p["ret_neu"]   for p in portfolios_mc]
+        fig.add_trace(go.Scatter(
+            x=xs_mc, y=ys_mc,
+            mode="markers",
+            marker=dict(size=4, color="rgba(255,255,255,0.10)", line=dict(width=0)),
+            name="Portfólios possíveis",
+            hoverinfo="skip",
+            showlegend=True,
+        ))
 
     # Fronteira eficiente teórica: parábola de (min_risco, min_ret) → (max_risco, max_ret)
     if len(xs) >= 2:
@@ -589,99 +605,107 @@ def grafico_cenarios_batalha(analises: list) -> go.Figure:
     return fig
 
 
-# ---------------------------------------------------------------------------
-# Tela 3 — Batalha de Cenários (versão antiga — mantida para compatibilidade)
-# ---------------------------------------------------------------------------
-
-_CORES_BATALHA = {
-    "selic":     AZUL,
-    "pre":       LARANJA,
-    "ipca_mais": VERDE,
-}
-
-_NOMES_BATALHA = {
-    "selic":     "💰 Tesouro Selic (Pós)",
-    "pre":       "📌 Tesouro Prefixado (Pré)",
-    "ipca_mais": "🛡️ Tesouro IPCA+ (Híbrido)",
-}
-
-_CHAVES_BATALHA = ["selic", "pre", "ipca_mais"]
-
-
-def grafico_batalha_barras(resultados: dict, capital: float) -> go.Figure:
+def grafico_retorno_por_horizonte(resultados_por_horizonte: dict, horizonte_atual: int) -> go.Figure:
     """
-    Barras verticais comparando o valor final acumulado dos três instrumentos.
-    A barra vencedora recebe opacidade total; as demais ficam suavizadas.
+    Linhas de retorno neutro por horizonte para cada título.
+    Linha sólida = título ainda em carrego (antes do vencimento).
+    Linha tracejada = título venceu, retorno inclui reinvestimento à Selic.
     """
-    valores = [resultados[k]["valor_final"] for k in _CHAVES_BATALHA]
-    vencedor = _CHAVES_BATALHA[valores.index(max(valores))]
-
     fig = go.Figure()
-    for k in _CHAVES_BATALHA:
-        vf = resultados[k]["valor_final"]
-        fig.add_trace(go.Bar(
-            name=_NOMES_BATALHA[k],
-            x=[_NOMES_BATALHA[k]],
-            y=[vf],
-            marker=dict(color=_CORES_BATALHA[k], opacity=1.0 if k == vencedor else 0.45),
-            showlegend=False,
-            text=[formatar_brl(vf)],
-            textposition="outside",
-            textfont=dict(size=12, color=TEXTO),
-            hovertemplate=(
-                f"<b>{_NOMES_BATALHA[k]}</b>"
-                "<br>Valor Final: R$ %{y:,.2f}<extra></extra>"
-            ),
-        ))
+    horizons = sorted(resultados_por_horizonte.keys())
+    if not horizons:
+        return fig
 
-    fig.add_hline(
-        y=capital, line_dash="dot", line_color=TEXTO_FRACO,
-        annotation_text=f"Capital Inicial: {formatar_brl(capital, 0)}",
-        annotation_position="top left",
-        annotation_font_color=TEXTO_FRACO,
-        annotation_font_size=10,
+    primeiros = resultados_por_horizonte[horizons[0]]
+    tem_reinvest = False
+
+    for idx, ref in enumerate(primeiros):
+        nome  = ref["nome"]
+        cor   = _CORES_ATIVO[idx % len(_CORES_ATIVO)]
+        rgb   = _hex_to_rgb(cor)
+        nome_curto = nome.replace("Tesouro ", "")
+
+        xs_m, ys_m, ys_adv, ys_fav = [], [], [], []
+        xs_r, ys_r                  = [], []
+        bridge_feito                = False
+
+        for h in horizons:
+            a = next((x for x in resultados_por_horizonte[h] if x["nome"] == nome), None)
+            if not a:
+                continue
+            if a.get("reinvest"):
+                tem_reinvest = True
+                if not bridge_feito and xs_m:
+                    xs_r.append(xs_m[-1])
+                    ys_r.append(ys_m[-1])
+                    bridge_feito = True
+                xs_r.append(h)
+                ys_r.append(a["ret_neu"])
+            else:
+                xs_m.append(h)
+                ys_m.append(a["ret_neu"])
+                ys_adv.append(a["ret_adv"])
+                ys_fav.append(a["ret_fav"])
+
+        # Banda adverso–favorável (apenas fase de carrego)
+        if xs_m and ys_fav and ys_adv:
+            fig.add_trace(go.Scatter(
+                x=xs_m + xs_m[::-1],
+                y=ys_fav + ys_adv[::-1],
+                fill="toself", fillcolor=f"rgba({rgb}, 0.08)",
+                line=dict(width=0), hoverinfo="skip", showlegend=False,
+            ))
+
+        # Linha sólida — carrego normal
+        if xs_m:
+            fig.add_trace(go.Scatter(
+                x=xs_m, y=ys_m,
+                name=nome_curto,
+                mode="lines+markers",
+                line=dict(color=cor, width=2.5, dash="solid"),
+                marker=dict(size=7, color=cor),
+                legendgroup=nome,
+                hovertemplate=(
+                    f"<b>{nome_curto}</b><br>"
+                    "Horizonte: %{x} anos<br>"
+                    "Retorno neutro: %{y:.2f}% a.a.<extra></extra>"
+                ),
+            ))
+
+        # Linha tracejada — reinvestimento após vencimento
+        if xs_r:
+            fig.add_trace(go.Scatter(
+                x=xs_r, y=ys_r,
+                name=nome_curto,
+                mode="lines",
+                line=dict(color=cor, width=1.5, dash="dot"),
+                legendgroup=nome,
+                showlegend=False,
+                hovertemplate=(
+                    f"<b>{nome_curto}</b> (reinvest. Selic)<br>"
+                    "Horizonte: %{x} anos<br>"
+                    "Retorno: %{y:.2f}% a.a.<extra></extra>"
+                ),
+            ))
+
+    fig.add_vline(
+        x=horizonte_atual,
+        line_dash="dot", line_color=AMARELO,
+        annotation_text=f"Seu horizonte ({horizonte_atual}a)",
+        annotation_font_color=AMARELO, annotation_font_size=10,
+        annotation_position="top right",
     )
 
-    fig.update_layout(**_layout_base("Valor Final Acumulado por Instrumento"))
+    titulo = "Retorno por Horizonte de Saída"
+    if tem_reinvest:
+        titulo += "  ·  linha tracejada = reinvest. Selic após vencimento"
+
+    fig.update_layout(**_layout_base(titulo, yaxis_prefix=""))
     fig.update_layout(
-        showlegend=False,
-        yaxis=dict(title="Valor Acumulado (R$)", tickprefix="R$ ", tickformat=",.0f"),
-        xaxis_title="",
-        bargap=0.4,
-    )
-    return fig
-
-
-def grafico_batalha_trajetoria(df) -> go.Figure:
-    """
-    Linhas anuais mostrando a trajetória de crescimento de cada instrumento.
-    Revela como a vantagem se acumula (ou inverte) ao longo do tempo.
-    """
-    configs = [
-        ("selic",     "solid"),
-        ("pre",       "dash"),
-        ("ipca_mais", "dot"),
-    ]
-
-    fig = go.Figure()
-    for k, dash in configs:
-        fig.add_trace(go.Scatter(
-            x=df["ano"],
-            y=df[k],
-            name=_NOMES_BATALHA[k],
-            mode="lines+markers",
-            line=dict(color=_CORES_BATALHA[k], width=2.5, dash=dash),
-            marker=dict(size=6),
-            hovertemplate=(
-                f"<b>{_NOMES_BATALHA[k]}</b>"
-                "<br>Ano %{x}: R$ %{y:,.2f}<extra></extra>"
-            ),
-        ))
-
-    fig.update_layout(**_layout_base("Trajetória Anual dos Investimentos"))
-    fig.update_layout(
-        yaxis=dict(title="Valor Acumulado (R$)", tickprefix="R$ ", tickformat=",.0f"),
-        xaxis=dict(title="Ano", tickmode="linear", dtick=1, gridcolor=GRID),
+        xaxis=dict(title="Horizonte de saída (anos)", dtick=1, gridcolor=GRID),
+        yaxis=dict(title="Retorno esperado (% a.a.)", ticksuffix="%",
+                   tickformat=".1f", tickprefix="", gridcolor=GRID),
         legend=dict(orientation="h", y=-0.22),
+        hovermode="x unified",
     )
     return fig

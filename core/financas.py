@@ -527,6 +527,33 @@ def analise_batalha(
     }
 
 
+def gerar_portfolios_aleatorios(analises: list, n: int = 400, seed: int = 42) -> list:
+    """
+    Gera n portfólios aleatórios via amostragem Dirichlet (Monte Carlo).
+    Usado para plotar a nuvem de pontos da fronteira eficiente de Markowitz.
+    """
+    k = len(analises)
+    if k < 2:
+        return []
+    rng = np.random.default_rng(seed)
+    adv = np.array([a["ret_adv"] for a in analises])
+    neu = np.array([a["ret_neu"] for a in analises])
+    fav = np.array([a["ret_fav"] for a in analises])
+    out = []
+    for _ in range(n):
+        w     = rng.dirichlet(np.ones(k))
+        r_adv = float(w @ adv)
+        r_neu = float(w @ neu)
+        r_fav = float(w @ fav)
+        out.append({
+            "ret_adv":   r_adv,
+            "ret_neu":   r_neu,
+            "ret_fav":   r_fav,
+            "risco_std": float(np.std([r_adv, r_neu, r_fav])),
+        })
+    return out
+
+
 def carteira_mista(
     analise_principal: dict,
     analise_liquida: dict,
@@ -559,69 +586,33 @@ def carteira_mista(
     }
 
 
-def calcular_batalha(
-    capital: float,
-    taxa_selic: float,
-    taxa_pre: float,
-    taxa_real_ipca: float,
-    ipca: float,
-    anos: int,
-) -> dict:
-    """
-    Compara Tesouro Selic, Prefixado e IPCA+ ao final do prazo.
 
-    Retorna dict com valor_final, lucro_nominal e ganho_real_pct para cada instrumento.
-    Ganho real = poder de compra acima da inflação projetada.
-    """
-    selic_d = taxa_selic      / 100
-    pre_d   = taxa_pre        / 100
-    real_d  = taxa_real_ipca  / 100
-    ipca_d  = ipca            / 100
-
-    vf_selic = capital * (1 + selic_d) ** anos
-    vf_pre   = capital * (1 + pre_d)   ** anos
-    vf_ipca  = capital * ((1 + ipca_d) * (1 + real_d)) ** anos
-
-    fator_ipca = (1 + ipca_d) ** anos
-
-    return {
-        'selic': {
-            'valor_final':    vf_selic,
-            'lucro_nominal':  vf_selic - capital,
-            'ganho_real_pct': (vf_selic / capital / fator_ipca - 1) * 100,
-        },
-        'pre': {
-            'valor_final':    vf_pre,
-            'lucro_nominal':  vf_pre - capital,
-            'ganho_real_pct': (vf_pre / capital / fator_ipca - 1) * 100,
-        },
-        'ipca_mais': {
-            'valor_final':    vf_ipca,
-            'lucro_nominal':  vf_ipca - capital,
-            # Ganho real do IPCA+ = (1 + taxa_real)^anos − 1, sempre idêntico ao contratado
-            'ganho_real_pct': ((1 + real_d) ** anos - 1) * 100,
-        },
-    }
+def fv_mensal(taxa_a: float, n_meses: int, cap: float, pmt: float, aliq: float) -> dict:
+    """Valor futuro com aportes mensais. IR sobre o ganho total no vencimento."""
+    r_m = (1 + taxa_a) ** (1 / 12) - 1 if taxa_a > 0 else 0.0
+    n = float(n_meses)
+    if n == 0:
+        return {"fv_liq": cap, "fv_bruto": cap, "total_inv": cap, "ir": 0.0}
+    fator = (1 + r_m) ** n_meses
+    fv_bruto  = cap * fator + (pmt * (fator - 1) / r_m if abs(r_m) > 1e-10 else pmt * n)
+    total_inv = cap + pmt * n
+    ganho     = max(0.0, fv_bruto - total_inv)
+    ir        = ganho * aliq
+    return {"fv_liq": fv_bruto - ir, "fv_bruto": fv_bruto, "total_inv": total_inv, "ir": ir}
 
 
-def trajetoria_batalha(
-    capital: float,
-    taxa_selic: float,
-    taxa_pre: float,
-    taxa_real_ipca: float,
-    ipca: float,
-    anos: int,
-) -> pd.DataFrame:
-    """Série anual (ano 0 → N) dos três instrumentos para o gráfico de trajetória."""
-    selic_d = taxa_selic     / 100
-    pre_d   = taxa_pre       / 100
-    real_d  = taxa_real_ipca / 100
-    ipca_d  = ipca           / 100
+def pmt_para_meta(taxa_a: float, n_meses: int, cap: float, meta: float, aliq: float) -> float:
+    """Aporte mensal necessário para atingir 'meta' líquida dado capital inicial."""
+    r_m = (1 + taxa_a) ** (1 / 12) - 1 if taxa_a > 0 else 0.0
+    n = float(n_meses)
+    if n <= 0:
+        return max(0.0, meta - cap)
+    fator = (1 + r_m) ** n_meses
+    if abs(r_m) < 1e-10:
+        A, B = cap, n
+    else:
+        A = cap * (fator * (1 - aliq) + aliq)
+        B = (fator - 1) / r_m * (1 - aliq) + n * aliq
+    return max(0.0, (meta - A) / B) if B > 0 else 0.0
 
-    ts = range(anos + 1)
-    return pd.DataFrame({
-        'ano':       list(ts),
-        'selic':     [capital * (1 + selic_d) ** t for t in ts],
-        'pre':       [capital * (1 + pre_d)   ** t for t in ts],
-        'ipca_mais': [capital * ((1 + ipca_d) * (1 + real_d)) ** t for t in ts],
-    })
+

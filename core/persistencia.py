@@ -41,6 +41,10 @@ def _default_prefs() -> dict:
         "sim_di_jan31":            13.68,
         "sim_di_jan33":            13.82,
         "sim_di_jan35":            13.90,
+        "sim_rh_cap":              10_000.0,
+        "sim_rh_pre":              13.5,
+        "sim_rh_selic":            10.5,
+        "sim_rh_ano":              None,
         "sim_ativos_sel":          [],
         # Qual Ativo
         "bat_horizonte":           3,
@@ -56,6 +60,7 @@ def _default_prefs() -> dict:
             "Tesouro IPCA+ 2032",
             "Tesouro IPCA+ 2040",
         ],
+        "bat_perfil":              "Moderado",
         # Comparar Produtos
         "cmp_horizonte":           2,
         "cmp_capital":             50_000.0,
@@ -66,6 +71,18 @@ def _default_prefs() -> dict:
         "cmp_cdb":                 14.0,
         "cmp_lci":                 11.5,
         "cmp_lca":                 11.2,
+        # Calculadora de Aportes Mensais (Dashboard — aba Simulações)
+        "dash_calc_ipca":          5.0,
+        "dash_calc_selic":         13.0,
+        "dash_calc_pre":           14.5,
+        "dash_calc_ipca_plus":     7.0,
+        "dash_calc_cdb":           14.0,
+        "dash_calc_lci":           11.5,
+        "dash_calc_lca":           11.2,
+        "dash_calc_aporte":        500.0,
+        "dash_calc_meta":          200_000.0,
+        "dash_calc_prazo_proj":    5,
+        "dash_calc_prazo_rev":     5,
     }
 
 

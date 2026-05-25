@@ -6,6 +6,7 @@ Portfólio como visão principal; análise detalhada como drill-down da posiçã
 
 import streamlit as st
 import pandas as pd
+import calendar as _cal
 from datetime import date, timedelta
 
 from core.financas import (
@@ -16,7 +17,8 @@ from core.financas import (
     formatar_brl,
     aliquota_iof_renda_fixa,
     aliquota_ir_renda_fixa,
-    retorno_liquido_ir,
+    fv_mensal,
+    pmt_para_meta,
 )
 from core.dados import obter_dados_completos, CATEGORIAS_TITULOS, TITULOS_CONFIG, TITULOS_BATALHA, timestamp_ultima_atualizacao, chave_cache_mercado
 from core.persistencia import carregar, salvar, inicializar_session
@@ -59,6 +61,39 @@ def render():
         st.caption(f"✅ Dados ao vivo — Tesouro Direto · carregados às **{_hora}** (atualiza a cada 2h)")
     else:
         st.caption("⚠️ Modo offline — usando dados de referência")
+
+    # -----------------------------------------------------------------------
+    # Cards de taxa ao vivo — pulso do mercado
+    # -----------------------------------------------------------------------
+    if not df_titulos.empty:
+        _m_sl  = df_titulos[df_titulos["nome"].str.contains("Selic", na=False)].sort_values("vencimento")
+        _m_pre = df_titulos[
+            df_titulos["nome"].str.contains("Prefixado", na=False)
+            & ~df_titulos["nome"].str.contains("Semestrais", na=False)
+        ].sort_values("vencimento")
+        _m_ip  = df_titulos[df_titulos["nome"] == "Tesouro IPCA+ 2032"]
+        if _m_ip.empty:
+            _m_ip = df_titulos[
+                df_titulos["nome"].str.contains("IPCA\\+", na=False, regex=True)
+                & ~df_titulos["nome"].str.contains("Semestrais", na=False)
+            ]
+        _pc1, _pc2, _pc3 = st.columns(3)
+        with _pc1:
+            if not _m_sl.empty:
+                st.metric("💰 Tesouro Selic", f"{_m_sl.iloc[0]['taxa_compra']:.2f}% a.a.",
+                          "Pós-fixado · sem risco MaM", delta_color="off")
+        with _pc2:
+            if not _m_pre.empty:
+                _p = _m_pre.iloc[0]
+                st.metric(f"📌 Pré {_p['nome'].split()[-1]}", f"{_p['taxa_compra']:.2f}% a.a.",
+                          "Nominal · taxa travada", delta_color="off")
+        with _pc3:
+            if not _m_ip.empty:
+                _ip = _m_ip.iloc[0]
+                _ip_label = _ip["nome"].replace("Tesouro ", "")
+                st.metric(f"🛡️ {_ip_label}", f"{_ip['taxa_compra']:.2f}% real",
+                          "IPCA + taxa real", delta_color="off")
+        st.divider()
 
     # -----------------------------------------------------------------------
     # Helper: calcula todas as métricas de uma posição a partir dos inputs
@@ -138,6 +173,210 @@ def render():
             vf=vf, prazo_score=ps, posicao_score=pos_sc, score=ps + pos_sc,
             taxa_pct=taxa_pct, tipo_asset=tipo_asset, is_simples=True,
         )
+
+    def _render_calc(default_cap: float):
+        st.markdown("#### 💰  Calculadora de Aportes Mensais")
+        st.caption("Simule quanto vai acumular com aportes regulares, ou quanto precisa poupar para atingir uma meta.")
+
+        with st.expander("⚙️  Taxas de Referência", expanded=False):
+            _dc1, _dc2, _dc3 = st.columns(3)
+            with _dc1:
+                _dc_ipca      = st.number_input(
+                    "IPCA projetado (% a.a.)",
+                    min_value=1.0, max_value=15.0, value=5.0,
+                    step=0.1, format="%.1f", key="dash_calc_ipca",
+                )
+            with _dc2:
+                _dc_selic     = st.number_input(
+                    "Tesouro Selic (% a.a.)",
+                    min_value=1.0, max_value=30.0, value=13.0,
+                    step=0.05, format="%.2f", key="dash_calc_selic",
+                )
+                _dc_pre       = st.number_input(
+                    "Tesouro Prefixado (% a.a.)",
+                    min_value=1.0, max_value=30.0, value=14.5,
+                    step=0.05, format="%.2f", key="dash_calc_pre",
+                )
+                _dc_ipca_plus = st.number_input(
+                    "Tesouro IPCA+ (taxa real % a.a.)",
+                    min_value=1.0, max_value=20.0, value=7.0,
+                    step=0.05, format="%.2f", key="dash_calc_ipca_plus",
+                )
+            with _dc3:
+                _dc_cdb       = st.number_input(
+                    "CDB (% a.a. bruto)",
+                    min_value=1.0, max_value=30.0, value=14.0,
+                    step=0.1, format="%.2f", key="dash_calc_cdb",
+                )
+                _dc_lci       = st.number_input(
+                    "LCI (% a.a. isento)",
+                    min_value=1.0, max_value=20.0, value=11.5,
+                    step=0.1, format="%.2f", key="dash_calc_lci",
+                )
+                _dc_lca       = st.number_input(
+                    "LCA (% a.a. isento)",
+                    min_value=1.0, max_value=20.0, value=11.2,
+                    step=0.1, format="%.2f", key="dash_calc_lca",
+                )
+            if not df_titulos.empty:
+                _sl_live  = df_titulos[df_titulos["nome"].str.contains("Selic", na=False)]
+                _pre_live = df_titulos[
+                    df_titulos["nome"].str.contains("Prefixado", na=False)
+                    & ~df_titulos["nome"].str.contains("Semestrais", na=False)
+                ]
+                _ip_live  = df_titulos[df_titulos["nome"] == "Tesouro IPCA+ 2032"]
+                _live_pts = []
+                if not _sl_live.empty:
+                    _live_pts.append(f"Selic {_sl_live.iloc[0]['taxa_compra']:.2f}%")
+                if not _pre_live.empty:
+                    _live_pts.append(f"Pré {_pre_live.iloc[0]['taxa_compra']:.2f}%")
+                if not _ip_live.empty:
+                    _live_pts.append(f"IPCA+ 2032: {_ip_live.iloc[0]['taxa_compra']:.2f}% real")
+                if _live_pts:
+                    st.caption("📡 Taxas ao vivo — " + " · ".join(_live_pts))
+
+        _dc_ipca_f = _dc_ipca / 100
+        _taxas_dc  = {
+            "Tesouro IPCA+":     (1 + _dc_ipca_plus / 100) * (1 + _dc_ipca_f) - 1,
+            "Tesouro Prefixado": _dc_pre / 100,
+            "Tesouro Selic":     _dc_selic / 100,
+            "CDB":               _dc_cdb / 100,
+            "LCI":               _dc_lci / 100,
+            "LCA":               _dc_lca / 100,
+        }
+        _isentos_dc = {"LCI", "LCA"}
+
+        _dtab_proj, _dtab_rev = st.tabs([
+            "📈  Se eu poupar X/mês, quanto terei?",
+            "🎯  Quanto preciso poupar por mês?",
+        ])
+
+        with _dtab_proj:
+            _dtp1, _dtp2 = st.columns(2)
+            with _dtp1:
+                _dc_pmt = st.number_input(
+                    "Aporte mensal (R$)",
+                    min_value=0.0, max_value=100_000.0, value=500.0,
+                    step=100.0, format="%.2f", key="dash_calc_aporte",
+                )
+                _dc_cap = st.number_input(
+                    "Capital inicial (R$)",
+                    min_value=0.0, max_value=5_000_000.0, value=default_cap,
+                    step=500.0, format="%.2f", key="dash_calc_capital",
+                )
+            with _dtp2:
+                _dc_prazo_p = st.slider(
+                    "Prazo (anos)", min_value=1, max_value=30, value=5,
+                    key="dash_calc_prazo_proj",
+                )
+
+            _dc_n_p = _dc_prazo_p * 12
+
+            _dc_rows_p = []
+            for _dn, _dt in _taxas_dc.items():
+                _da = 0.0 if _dn in _isentos_dc else aliquota_ir_renda_fixa(_dc_prazo_p)
+                _dr = fv_mensal(_dt, _dc_n_p, _dc_cap, _dc_pmt, _da)
+                _dc_rows_p.append({
+                    "Produto":         _dn,
+                    "Valor Final":     formatar_brl(_dr["fv_liq"]),
+                    "Total Investido": formatar_brl(_dr["total_inv"]),
+                    "IR pago":         formatar_brl(_dr["ir"]),
+                    "Ganho Líquido":   formatar_brl(_dr["fv_liq"] - _dr["total_inv"]),
+                    "_fv":             _dr["fv_liq"],
+                })
+            _dc_rows_p.sort(key=lambda r: r["_fv"], reverse=True)
+            _dc_mp  = _dc_rows_p[0]["Produto"] if _dc_rows_p else ""
+            _dc_df_p = pd.DataFrame([{k: v for k, v in r.items() if k != "_fv"} for r in _dc_rows_p])
+            _dc_df_p.insert(0, "🏆", ["🏆" if r["Produto"] == _dc_mp else "" for r in _dc_rows_p])
+            st.dataframe(_dc_df_p, hide_index=True, use_container_width=True)
+
+            _dc_anos_r = list(range(0, _dc_prazo_p + 1))
+            _dc_fig_p  = go.Figure()
+            for _dn, _dt in _taxas_dc.items():
+                _dc_fig_p.add_trace(go.Scatter(
+                    x=_dc_anos_r,
+                    y=[
+                        fv_mensal(
+                            _dt, a * 12, _dc_cap, _dc_pmt,
+                            0.0 if _dn in _isentos_dc else aliquota_ir_renda_fixa(max(1, a)),
+                        )["fv_liq"]
+                        for a in _dc_anos_r
+                    ],
+                    name=_dn, mode="lines",
+                    hovertemplate=f"{_dn}: R$ %{{y:,.2f}}<extra></extra>",
+                ))
+            _dc_fig_p.add_trace(go.Scatter(
+                x=_dc_anos_r,
+                y=[_dc_cap + _dc_pmt * a * 12 for a in _dc_anos_r],
+                name="Total Investido", mode="lines",
+                line=dict(dash="dot", color="#718096"),
+                hovertemplate="Total investido: R$ %{y:,.2f}<extra></extra>",
+            ))
+            _dc_fig_p.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                font_color="#e0e0e0",
+                yaxis=dict(title="Valor Final (R$)", gridcolor="rgba(255,255,255,0.06)",
+                           tickprefix="R$ ", tickformat=",.0f"),
+                xaxis=dict(title="Anos", gridcolor="rgba(255,255,255,0.04)"),
+                legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=-0.25),
+                margin=dict(t=10, b=10), height=320,
+            )
+            st.plotly_chart(_dc_fig_p, use_container_width=True)
+
+        with _dtab_rev:
+            _dtr1, _dtr2 = st.columns(2)
+            with _dtr1:
+                _dc_meta = st.number_input(
+                    "Meta (valor final líquido, R$)",
+                    min_value=1_000.0, max_value=10_000_000.0, value=200_000.0,
+                    step=10_000.0, format="%.2f", key="dash_calc_meta",
+                )
+                _dc_cap_r = st.number_input(
+                    "Capital inicial (R$)",
+                    min_value=0.0, max_value=5_000_000.0, value=default_cap,
+                    step=500.0, format="%.2f", key="dash_calc_cap_rev",
+                )
+            with _dtr2:
+                _dc_prazo_r = st.slider(
+                    "Prazo (anos)", min_value=1, max_value=30, value=5,
+                    key="dash_calc_prazo_rev",
+                )
+
+            _dc_n_r    = _dc_prazo_r * 12
+            _dc_aliq_r = aliquota_ir_renda_fixa(_dc_prazo_r)
+
+            _dc_rows_r = []
+            for _dn, _dt in _taxas_dc.items():
+                _da   = 0.0 if _dn in _isentos_dc else _dc_aliq_r
+                _dpmt = pmt_para_meta(_dt, _dc_n_r, _dc_cap_r, _dc_meta, _da)
+                _dtot = _dc_cap_r + _dpmt * _dc_n_r
+                _dc_rows_r.append({
+                    "Produto":         _dn,
+                    "Aporte Mensal":   formatar_brl(_dpmt),
+                    "Total Aportado":  formatar_brl(_dtot),
+                    "Juros trabalham": formatar_brl(_dc_meta - _dtot),
+                    "_pmt":            _dpmt,
+                })
+            _dc_rows_r.sort(key=lambda r: r["_pmt"])
+            _dc_mr  = _dc_rows_r[0]["Produto"] if _dc_rows_r else ""
+            _dc_df_r = pd.DataFrame([{k: v for k, v in r.items() if k != "_pmt"} for r in _dc_rows_r])
+            _dc_df_r.insert(0, "🏆", ["🏆" if r["Produto"] == _dc_mr else "" for r in _dc_rows_r])
+            st.dataframe(_dc_df_r, hide_index=True, use_container_width=True)
+
+            if _dc_rows_r:
+                _dc_best  = _dc_rows_r[0]
+                _dc_worst = _dc_rows_r[-1]
+                _dc_diff  = _dc_worst["_pmt"] - _dc_best["_pmt"]
+                _dc_juros = _dc_meta - (_dc_cap_r + _dc_best["_pmt"] * _dc_n_r)
+                st.info(
+                    f"**{_dc_best['Produto']}** exige o menor aporte: "
+                    f"**{formatar_brl(_dc_best['_pmt'])}/mês** para atingir "
+                    f"{formatar_brl(_dc_meta)} em {_dc_prazo_r} ano(s).\n\n"
+                    f"Você economiza **{formatar_brl(_dc_diff)}/mês** vs. "
+                    f"**{_dc_worst['Produto']}** ({formatar_brl(_dc_worst['_pmt'])}/mês). "
+                    f"Os juros cobrem **{formatar_brl(_dc_juros)}** do seu objetivo.",
+                    icon="💡",
+                )
 
     # -----------------------------------------------------------------------
     # Portfólio
@@ -370,21 +609,102 @@ def render():
                           "**70–100 🟢 Saudável · 40–69 🟡 Atenção · 0–39 🔴 Risco**"
                       ))
 
+        # Gráficos de alocação — visíveis com 2+ posições
+        if len(portfolio) >= 2:
+            _TIPO_INFO = {
+                "ipca_mais": ("IPCA+",        "#a5d6a7"),
+                "selic":     ("Pós-Fixado",   "#4fc3f7"),
+                "pre":       ("Pré-Fixado",   "#ef9a9a"),
+                "cdb":       ("CDB",          "#ffcc80"),
+                "lci":       ("LCI",          "#ce93d8"),
+                "lca":       ("LCA",          "#80cbc4"),
+            }
+            _tipo_agg: dict = {}
+            _prazo_agg: dict = {}
+            for p in portfolio:
+                _ta   = p.get("tipo_asset", "ipca_mais")
+                _lbl, _cor = _TIPO_INFO.get(_ta, (_ta, "#718096"))
+                if _lbl not in _tipo_agg:
+                    _tipo_agg[_lbl] = [0.0, _cor]
+                _tipo_agg[_lbl][0] += p["valor"]
+                _ar  = p.get("anos", 1)
+                _pk  = "Curto (≤ 2a)" if _ar <= 2 else "Médio (3–5a)" if _ar <= 5 else "Longo (> 5a)"
+                _prazo_agg[_pk] = _prazo_agg.get(_pk, 0.0) + p["valor"]
+
+            _PRAZO_COR = {
+                "Curto (≤ 2a)": "#4fc3f7",
+                "Médio (3–5a)": "#a5d6a7",
+                "Longo (> 5a)": "#ef9a9a",
+            }
+            _dl = dict(
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                font_color="#e0e0e0", margin=dict(t=36, b=0, l=0, r=0), height=210,
+                legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=-0.08),
+            )
+            _da1, _da2 = st.columns(2)
+            with _da1:
+                _fig_t = go.Figure(go.Pie(
+                    labels=[k for k in _tipo_agg],
+                    values=[v[0] for v in _tipo_agg.values()],
+                    hole=0.55,
+                    marker=dict(
+                        colors=[v[1] for v in _tipo_agg.values()],
+                        line=dict(color="#0e1117", width=2),
+                    ),
+                    textinfo="percent",
+                    hovertemplate="%{label}: R$ %{value:,.2f} (%{percent})<extra></extra>",
+                ))
+                _fig_t.update_layout(**_dl, title=dict(
+                    text="Alocação por Tipo", font=dict(size=12, color="#e0e0e0"), x=0.5, xanchor="center",
+                ))
+                st.plotly_chart(_fig_t, use_container_width=True)
+            with _da2:
+                _prazo_order = [k for k in ("Curto (≤ 2a)", "Médio (3–5a)", "Longo (> 5a)") if k in _prazo_agg]
+                _fig_p = go.Figure(go.Pie(
+                    labels=_prazo_order,
+                    values=[_prazo_agg[k] for k in _prazo_order],
+                    hole=0.55,
+                    marker=dict(
+                        colors=[_PRAZO_COR[k] for k in _prazo_order],
+                        line=dict(color="#0e1117", width=2),
+                    ),
+                    textinfo="percent",
+                    hovertemplate="%{label}: R$ %{value:,.2f} (%{percent})<extra></extra>",
+                ))
+                _fig_p.update_layout(**_dl, title=dict(
+                    text="Alocação por Prazo", font=dict(size=12, color="#e0e0e0"), x=0.5, xanchor="center",
+                ))
+                st.plotly_chart(_fig_p, use_container_width=True)
+
         # Tabela
         rows_p = []
         for i, p in enumerate(portfolio):
-            var = (p["mam_cache"] - p["valor"]) / p["valor"] * 100
+            var     = (p["mam_cache"] - p["valor"]) / p["valor"] * 100
+            score_p = _calcs_port[i]["score"] if _calcs_port[i] is not None else 0.0
             rows_p.append({
-                "#":             i + 1,
-                "Título":        p["titulo"].replace("Tesouro ", ""),
-                "Capital":       formatar_brl(p["valor"]),
-                "Taxa":          f"{p['taxa']:.2f}%",
-                "MaM Hoje":      formatar_brl(p["mam_cache"]),
-                "Var. %":        f"{var:+.1f}%",
-                "Vence em":      formatar_brl(p["carrego_cache"]),
-                "Vencimento":    p["vencimento"],
+                "#":          i + 1,
+                "Título":     p["titulo"].replace("Tesouro ", ""),
+                "Capital":    formatar_brl(p["valor"]),
+                "Taxa":       f"{p['taxa']:.2f}%",
+                "MaM Hoje":   formatar_brl(p["mam_cache"]),
+                "Var. %":     f"{var:+.1f}%",
+                "Saúde":      score_p,
+                "Vencimento": p["vencimento"],
             })
-        st.dataframe(pd.DataFrame(rows_p), hide_index=True, use_container_width=True)
+        st.dataframe(
+            pd.DataFrame(rows_p),
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Saúde": st.column_config.ProgressColumn(
+                    "Saúde",
+                    help="Índice 0–100: prazo restante (até 60 pts) + posição MaM (até 40 pts). 🟢 ≥70 · 🟡 40–69 · 🔴 <40",
+                    min_value=0,
+                    max_value=100,
+                    format="%.0f",
+                ),
+            },
+        )
 
         # Controles de remoção
         _nomes_r = [
@@ -417,6 +737,8 @@ def render():
     # Análise Detalhada (só renderiza se há posições)
     # -----------------------------------------------------------------------
     if not portfolio:
+        st.divider()
+        _render_calc(10_000.0)
         salvar({
             "dash_descontar_custodia": st.session_state.get("dash_descontar_custodia", False),
             "dash_choque_stress":      st.session_state.get("dash_choque_stress", 2.0),
@@ -428,6 +750,20 @@ def render():
             "port_taxa":               st.session_state.get("port_taxa", 5.50),
             "port_data":               st.session_state.get("port_data"),
             "port_vencimento":         st.session_state.get("port_vencimento"),
+            # Calculadora de Aportes Mensais
+            "dash_calc_ipca":          st.session_state.get("dash_calc_ipca", 5.0),
+            "dash_calc_selic":         st.session_state.get("dash_calc_selic", 13.0),
+            "dash_calc_pre":           st.session_state.get("dash_calc_pre", 14.5),
+            "dash_calc_ipca_plus":     st.session_state.get("dash_calc_ipca_plus", 7.0),
+            "dash_calc_cdb":           st.session_state.get("dash_calc_cdb", 14.0),
+            "dash_calc_lci":           st.session_state.get("dash_calc_lci", 11.5),
+            "dash_calc_lca":           st.session_state.get("dash_calc_lca", 11.2),
+            "dash_calc_aporte":        st.session_state.get("dash_calc_aporte", 500.0),
+            "dash_calc_meta":          st.session_state.get("dash_calc_meta", 200_000.0),
+            "dash_calc_prazo_proj":    st.session_state.get("dash_calc_prazo_proj", 5),
+            "dash_calc_prazo_rev":     st.session_state.get("dash_calc_prazo_rev", 5),
+            "dash_calc_capital":       st.session_state.get("dash_calc_capital", 10_000.0),
+            "dash_calc_cap_rev":       st.session_state.get("dash_calc_cap_rev", 10_000.0),
         })
         return
 
@@ -563,9 +899,8 @@ def render():
                 st.markdown("---")
                 st.markdown("#### 📊  Projeção de Crescimento")
                 # Gera pontos mensais do hoje até o vencimento
-                import calendar as _cal
                 _d, _meses_x, _meses_y = date.today(), [], []
-                while _d <= data_vencimento:
+                while _d < data_vencimento:
                     _dias = (_d - date.today()).days
                     _meses_x.append(_d.strftime("%b/%Y"))
                     _meses_y.append(valor_investido * (1 + taxa_contratada) ** (_dias / 365))
@@ -858,38 +1193,7 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
 
         st.markdown("---")
 
-        # Calculadora Reversa
-        st.markdown("#### 🔢  Calculadora Reversa")
-        st.caption("Quanto preciso investir hoje para ter R$ X no vencimento?")
-        cr1, cr2 = st.columns(2)
-        with cr1:
-            meta_brl = st.number_input("Meta no vencimento (R$)", min_value=1_000.0,
-                                        max_value=10_000_000.0, value=100_000.0,
-                                        step=5_000.0, format="%.2f", key="calc_meta")
-            taxa_rev = st.number_input("Taxa real contratada (% a.a.)", min_value=1.0,
-                                        max_value=20.0, value=taxa_contratada_pct,
-                                        step=0.05, format="%.2f", key="calc_taxa")
-        with cr2:
-            anos_rev = st.number_input("Prazo (anos)", min_value=1, max_value=40,
-                                        value=anos_restantes, step=1, key="calc_anos")
-            ipca_rev = st.number_input("IPCA projetado (% a.a.)", min_value=1.0,
-                                        max_value=15.0, value=5.0, step=0.1,
-                                        format="%.1f", key="calc_ipca")
-
-        taxa_nom_rev = (1 + taxa_rev / 100) * (1 + ipca_rev / 100) - 1
-        cap_nec      = meta_brl / (1 + taxa_nom_rev) ** anos_rev
-        meta_real    = meta_brl / (1 + ipca_rev / 100) ** anos_rev
-
-        rr1, rr2, rr3 = st.columns(3)
-        with rr1:
-            st.metric("Capital Necessário Hoje", formatar_brl(cap_nec),
-                      f"Para ter {formatar_brl(meta_brl)} em {anos_rev}a")
-        with rr2:
-            st.metric("Valor Real da Meta (hoje)", formatar_brl(meta_real),
-                      "Poder de compra equivalente")
-        with rr3:
-            st.metric("Taxa Nominal Equiv.", f"{taxa_nom_rev*100:.2f}% a.a.",
-                      f"{taxa_rev:.2f}% real + {ipca_rev:.1f}% IPCA")
+        _render_calc(valor_investido)
 
         st.markdown("---")
 
@@ -1200,7 +1504,7 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
 
         # Copiar análise
         st.markdown("#### 📋  Copiar Resumo da Análise")
-        score_label = "Sereno" if score >= 70 else "Atenção" if score >= 40 else "Risco de Pânico"
+        _pos_score_label = "Sereno" if score >= 70 else "Atenção" if score >= 40 else "Risco de Pânico"
         posicao_str = "ACIMA" if resultado["mam"] >= valor_investido else "ABAIXO"
         resumo = (
             f"📊 RESUMO DA POSIÇÃO — Renda Fixa CF\n"
@@ -1216,7 +1520,7 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
             f"Se aguardar vencimento: {formatar_brl(valor_vencimento)}\n"
             f"Taxa de mercado atual: {taxa_mercado_pct:.2f}% a.a. real\n"
             f"{'─' * 40}\n"
-            f"Saúde da Posição: {score:.0f}/100 — {score_label}\n"
+            f"Saúde da Posição: {score:.0f}/100 — {_pos_score_label}\n"
             f"  • Prazo: {prazo_score:.0f}/60 pts | Posição: {posicao_score:.0f}/40 pts\n"
             f"{'─' * 40}\n"
             f"Gerado em {date.today().strftime('%d/%m/%Y')} via Renda Fixa CF"
@@ -1240,4 +1544,18 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
         "port_taxa":               st.session_state.get("port_taxa", 5.50),
         "port_data":               st.session_state.get("port_data"),
         "port_vencimento":         st.session_state.get("port_vencimento"),
+        # Calculadora de Aportes Mensais
+        "dash_calc_ipca":          st.session_state.get("dash_calc_ipca", 5.0),
+        "dash_calc_selic":         st.session_state.get("dash_calc_selic", 13.0),
+        "dash_calc_pre":           st.session_state.get("dash_calc_pre", 14.5),
+        "dash_calc_ipca_plus":     st.session_state.get("dash_calc_ipca_plus", 7.0),
+        "dash_calc_cdb":           st.session_state.get("dash_calc_cdb", 14.0),
+        "dash_calc_lci":           st.session_state.get("dash_calc_lci", 11.5),
+        "dash_calc_lca":           st.session_state.get("dash_calc_lca", 11.2),
+        "dash_calc_aporte":        st.session_state.get("dash_calc_aporte", 500.0),
+        "dash_calc_meta":          st.session_state.get("dash_calc_meta", 200_000.0),
+        "dash_calc_prazo_proj":    st.session_state.get("dash_calc_prazo_proj", 5),
+        "dash_calc_prazo_rev":     st.session_state.get("dash_calc_prazo_rev", 5),
+        "dash_calc_capital":       st.session_state.get("dash_calc_capital", valor_investido),
+        "dash_calc_cap_rev":       st.session_state.get("dash_calc_cap_rev", valor_investido),
     })
