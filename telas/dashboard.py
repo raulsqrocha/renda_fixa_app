@@ -20,7 +20,7 @@ from core.financas import (
     fv_mensal,
     pmt_para_meta,
 )
-from core.dados import obter_dados_completos, calcular_vna_em_data, buscar_selic_meta_bcb, CATEGORIAS_TITULOS, TITULOS_CONFIG, TITULOS_BATALHA, timestamp_ultima_atualizacao, chave_cache_mercado
+from core.dados import obter_dados_completos, calcular_vna_em_data, buscar_selic_meta_bcb, buscar_selic_na_data, CATEGORIAS_TITULOS, TITULOS_CONFIG, TITULOS_BATALHA, timestamp_ultima_atualizacao, chave_cache_mercado
 from core.persistencia import carregar, salvar, inicializar_session
 from core.graficos import grafico_paradoxo, grafico_score
 import plotly.graph_objects as go
@@ -469,6 +469,14 @@ def render():
             st.session_state["port_taxa"] = _DEFAULTS_TAXA.get(_curr_cat, 5.50)
         st.session_state["_port_cat_prev"] = _curr_cat
 
+        # Para Tesouro Selic: auto-preenche a taxa com a meta COPOM vigente na data de compra
+        if _curr_cat == "Tesouro Selic":
+            _selic_date = st.session_state.get("port_data")
+            _prev_selic_date = st.session_state.get("_port_selic_date_prev")
+            if _selic_date is not None and _selic_date != _prev_selic_date:
+                st.session_state["port_taxa"] = buscar_selic_na_data(_selic_date)
+            st.session_state["_port_selic_date_prev"] = _selic_date
+
         # Garante que port_cat é sempre uma categoria válida (evita KeyError se None ou inválido)
         if st.session_state.get("port_cat") not in _CATS_ALL:
             st.session_state["port_cat"] = list(_CATS_ALL.keys())[0]
@@ -510,14 +518,19 @@ def render():
                 "Data de Compra",
                 value=date.today() - timedelta(days=365),
                 max_value=date.today() - timedelta(days=1),
+                format="DD/MM/YYYY",
                 key="port_data",
             )
+
+        if _tipo == "selic":
+            st.caption(f"✅ Taxa Selic preenchida automaticamente com a meta COPOM vigente em {_pdat.strftime('%d/%m/%Y')} — editável se necessário.")
 
         if _tipo in ("cdb", "lci", "lca"):
             _pvenc_date = st.date_input(
                 "Data de Vencimento",
                 value=date.today() + timedelta(days=365 * 2),
                 min_value=date.today() + timedelta(days=31),
+                format="DD/MM/YYYY",
                 key="port_vencimento",
             )
         elif _is_simples:

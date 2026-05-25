@@ -169,6 +169,31 @@ def buscar_selic_meta_bcb() -> float:
         return 14.75
 
 
+@st.cache_data(ttl=3600 * 24)
+def buscar_selic_na_data(data_compra: "date") -> float:
+    """
+    Retorna a meta Selic (COPOM) vigente na data de compra informada.
+    Busca BCB Série 1178 nos 90 dias anteriores à data e retorna o último valor.
+    Fallback: 14.75% se a API estiver indisponível.
+    """
+    from datetime import timedelta
+    try:
+        ini = (data_compra - timedelta(days=90)).strftime("%d/%m/%Y")
+        fim = data_compra.strftime("%d/%m/%Y")
+        url = (
+            f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados"
+            f"?formato=json&dataInicial={ini}&dataFinal={fim}"
+        )
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        dados = resp.json()
+        if dados:
+            return float(dados[-1]["valor"])
+    except Exception:
+        pass
+    return 14.75
+
+
 @st.cache_data(ttl=3600 * 8)
 def buscar_ipca_bcb() -> pd.DataFrame:
     """
