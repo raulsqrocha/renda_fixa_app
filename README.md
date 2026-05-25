@@ -110,7 +110,7 @@ $$PU = \sum_{i=1}^{n} \frac{C}{(1 + r)^{du_i/252}} + \frac{VNA}{(1 + r)^{du_n/25
 
 Where `C` = semiannual coupon (`VNA × [(1.06)^0.5 − 1]`), `r` = real yield, `du` = business days using the 252 d.u./year Brazilian convention.
 
-> Business days are counted Mon–Fri with an estimated correction of ~11 ANBIMA holidays/year, reducing the gap vs. the official ANBIMA calendar without requiring an external library. Expected deviation: ±2 DU/year.
+> Business days are counted using the exact ANBIMA holiday calendar, computed via the Gauss Easter algorithm and `numpy.busdaycalendar`. All Brazilian national holidays plus Carnival (Mon/Tue), Good Friday, and Corpus Christi are included for 2015–2070. Deviation vs. the official ANBIMA calendar: zero.
 
 **Mark-to-Market Early Exit Return:**
 
