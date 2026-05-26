@@ -123,10 +123,12 @@ hr { border-color: #2D3748 !important; }
 
 
 def aplicar_estilo_global() -> None:
+    """Injeta o CSS global do app via st.markdown."""
     st.markdown(_CSS, unsafe_allow_html=True)
 
 
 def sidebar_info() -> None:
+    """Renderiza o bloco de branding e créditos na sidebar."""
     with st.sidebar:
         # Branding
         st.markdown("""
@@ -230,6 +232,26 @@ def sidebar_info() -> None:
   </div>
 </div>
 """, unsafe_allow_html=True)
+
+        # Banner de aviso quando alguma fonte está usando dados de fallback
+        status = st.session_state.get("_status_dados", {})
+        partes = []
+        if status.get("titulos_fallback"):
+            partes.append("taxas dos títulos")
+        if status.get("ipca_fallback"):
+            partes.append("IPCA histórico")
+        if partes:
+            st.markdown(
+                f'<div style="background:linear-gradient(135deg,#2a1a00,#3d2800);'
+                f'border:1px solid #DD6B20;border-left:4px solid #DD6B20;'
+                f'border-radius:8px;padding:0.7rem 0.9rem;margin-bottom:1rem;'
+                f'font-size:0.78rem;color:#FEEBC8;">'
+                f'⚠️ <b>Dados estimados</b><br>'
+                f'<span style="color:#FBD38D;">{", ".join(partes)}</span><br>'
+                f'<span style="color:#718096;font-size:0.72rem;">API indisponível — usando referências locais</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
         st.markdown("""
 **Sobre os dados**

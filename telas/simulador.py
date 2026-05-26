@@ -59,6 +59,7 @@ def _cor_retorno(val: str) -> str:
 
 
 def render():
+    """Tela 3 — Simulador Avançado: cenários de IPCA, matriz MaM, curva DI e retrospecto histórico."""
     st.session_state["_page_id"] = "simulador"
 
     # Carrega preferências salvas antes de qualquer widget
@@ -210,8 +211,6 @@ def render():
 
         rows = []
         for nome, c in cenarios.items():
-            # Retorno anual nominal equivalente (CAGR)
-            cagr = ((c['valor_final'] / valor_sim) ** (1 / anos_restantes) - 1) * 100
             rows.append({
                 "Cenário":                    nome,
                 "Taxa Nominal a.a.":          f"{c['taxa_nominal_aa']:.2f}%",
@@ -669,8 +668,11 @@ seu poder de compra em **todos** esses cenários — é exatamente para isso que
                     _v_poup *= (1 + _r_poup_m)
                     _v_inf  *= (1 + _ipca_m)
                     _datas_rh.append(_row["data"])
-                    _ip_rh.append(_v_ip);   _pre_rh.append(_v_pre)
-                    _sel_rh.append(_v_sel); _poup_rh.append(_v_poup); _inf_rh.append(_v_inf)
+                    _ip_rh.append(_v_ip)
+                    _pre_rh.append(_v_pre)
+                    _sel_rh.append(_v_sel)
+                    _poup_rh.append(_v_poup)
+                    _inf_rh.append(_v_inf)
 
                 _fig_rh = go.Figure()
                 _series_rh = {

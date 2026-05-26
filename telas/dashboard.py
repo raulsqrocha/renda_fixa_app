@@ -8,10 +8,9 @@ import streamlit as st
 import pandas as pd
 import calendar as _cal
 from datetime import date, timedelta
+from typing import cast
 
 from core.financas import (
-    calcular_du,
-    datas_cupom_ntnb,
     pu_ntnb,
     metricas_carteira,
     serie_paradoxo,
@@ -22,10 +21,21 @@ from core.financas import (
     pmt_para_meta,
     analise_batalha,
 )
-from core.dados import obter_dados_completos, calcular_vna_em_data, buscar_selic_meta_bcb, buscar_selic_na_data, montar_catalogo_batalha, CATEGORIAS_TITULOS, TITULOS_CONFIG, TITULOS_BATALHA, timestamp_ultima_atualizacao, chave_cache_mercado
+from core.dados import (
+    obter_dados_completos,
+    buscar_selic_meta_bcb,
+    buscar_selic_na_data,
+    montar_catalogo_batalha,
+    CATEGORIAS_TITULOS,
+    TITULOS_BATALHA,
+    timestamp_ultima_atualizacao,
+    chave_cache_mercado,
+)
 from core.persistencia import carregar, salvar, inicializar_session
 from core.graficos import grafico_paradoxo, grafico_score
 import plotly.graph_objects as go
+
+from telas._dashboard_metricas import calcular_posicao_ntnb, calcular_posicao_simples
 
 
 @st.cache_data(ttl=3600 * 6, show_spinner=False)
@@ -34,6 +44,7 @@ def _serie_cached(vna, taxa_contratada, taxa_mercado, compra, vencimento, qtd, t
 
 
 def render():
+    """Tela 1 — Dashboard principal: portfólio, paradoxo MaM e análise de posição."""
     st.session_state["_page_id"] = "dashboard"
 
     _prefs = carregar()
@@ -114,102 +125,54 @@ def render():
         with _pc2:
             if not _m_pre.empty:
                 _p = _m_pre.iloc[0]
-                st.metric(f"📌 Pré {_p['nome'].split()[-1]}", f"{_p['taxa_compra']:.2f}% a.a.",
-                          "Nominal · taxa travada", delta_color="off")
+                st.metric(
+                    f"📌 Pré {_p['nome'].split()[-1]}", f"{_p['taxa_compra']:.2f}% a.a.",
+                    "Nominal · taxa travada", delta_color="off",
+                    help=(
+                        "**Taxa nominal pré-fixada** — definida no momento da compra e "
+                        "garantida até o vencimento independentemente da inflação ou da Selic.\n\n"
+                        "**Risco de MaM:** se você vender antes do vencimento, o preço de "
+                        "mercado pode ser maior ou menor que o valor contratado, dependendo "
+                        "do nível das taxas de juros no dia da venda.\n\n"
+                        "Para maximizar o resultado, o ideal é carregar o título até o vencimento."
+                    ),
+                )
         with _pc3:
             if not _m_ip.empty:
                 _ip = _m_ip.iloc[0]
                 _ip_label = _ip["nome"].replace("Tesouro ", "")
-                st.metric(f"🛡️ {_ip_label}", f"{_ip['taxa_compra']:.2f}% real",
-                          "IPCA + taxa real", delta_color="off")
+                st.metric(
+                    f"🛡️ {_ip_label}", f"{_ip['taxa_compra']:.2f}% real",
+                    "IPCA + taxa real", delta_color="off",
+                    help=(
+                        "**Taxa real** contratada acima do IPCA — seu poder de compra "
+                        "cresce a essa taxa independentemente da inflação.\n\n"
+                        "O rendimento total é: **(1 + taxa real) × (1 + IPCA) − 1**. "
+                        "Por exemplo, com IPCA de 5% e taxa real de 7%, o rendimento "
+                        "nominal seria aproximadamente 12,35% a.a.\n\n"
+                        "**Risco de MaM:** assim como o Prefixado, uma venda antecipada "
+                        "está sujeita à marcação a mercado — quanto mais longo o prazo, "
+                        "maior a sensibilidade a variações de taxa."
+                    ),
+                )
         st.divider()
 
     # -----------------------------------------------------------------------
     # Helper: calcula todas as métricas de uma posição a partir dos inputs
     # -----------------------------------------------------------------------
     def _calcular(titulo: str, valor: float, taxa_pct: float, data_compra_str: str):
-        dc   = date.fromisoformat(data_compra_str)
-        linha = df_titulos[df_titulos["nome"] == titulo] if not df_titulos.empty else pd.DataFrame()
-        if not linha.empty:
-            taxa_mkt_pct = float(linha["taxa_compra"].values[0])
-            taxa_vda_pct = float(linha["taxa_venda"].values[0]) if "taxa_venda" in linha.columns else None
-            dv           = date.fromisoformat(str(linha["vencimento"].values[0])[:10])
-        else:
-            cfg          = TITULOS_CONFIG.get(titulo, {})
-            taxa_mkt_pct = taxa_pct + 2.0
-            taxa_vda_pct = None
-            dv           = cfg.get("vencimento", date(2035, 5, 15))
-
-        tc, tm = taxa_pct / 100, taxa_mkt_pct / 100
-        cupom  = "Juros Semestrais" in titulo
-
-        if dc >= dv:
-            return None
-
-        # VNA na data de compra — corrige a quantidade e os valores absolutos de MaM/carrego
-        # pelo IPCA acumulado desde a compra. Sem isso, ambos ficam subestimados em ~IPCA*anos.
-        vna_compra = calcular_vna_em_data(df_ipca, dc)
-
-        cpns_c = datas_cupom_ntnb(dc, dv) if cupom else []
-        pu_c   = pu_ntnb(vna_compra, tc, dc, dv, cpns_c)
-        if pu_c <= 0:
-            return None
-
-        cpns_h = datas_cupom_ntnb(date.today(), dv) if cupom else []
-        res    = metricas_carteira(
-            valor_investido=valor, pu_na_compra=pu_c,
-            taxa_real_contratada=tc, taxa_real_mercado=tm,
-            vna=vna, data_hoje=date.today(), data_vencimento=dv,
-            datas_cupom=cpns_h,
-        )
-
-        anos_tot = (dv - dc).days / 365
-        anos_res = max(1, round((dv - date.today()).days / 365))
-        vf       = valor * (1 + tc) ** anos_tot
-
-        diff_pct = (res["mam"] - valor) / valor * 100
-        ps       = min(60.0, 10.0 + anos_res * 7.0)
-        poss     = max(0.0, min(40.0, 40.0 + diff_pct * 1.6))
-
-        return dict(
-            res=res, taxa_mkt_pct=taxa_mkt_pct, taxa_vda_pct=taxa_vda_pct,
-            dv=dv, dc=dc, tc=tc, tm=tm, cupom=cupom,
-            pu_c=pu_c, cpns_h=cpns_h, anos_tot=anos_tot, anos_res=anos_res,
-            vf=vf, prazo_score=ps, posicao_score=poss, score=ps + poss,
-            taxa_pct=taxa_pct, is_simples=False,
+        return calcular_posicao_ntnb(
+            titulo, valor, taxa_pct, data_compra_str,
+            df_titulos=df_titulos, df_ipca=df_ipca, vna=vna,
         )
 
     def _calcular_simples(titulo: str, tipo_asset: str, valor: float, taxa_pct: float,
                            data_compra_str: str, vencimento_str: str):
-        """Cálculo por accrual para Selic, Pré-Fixado, CDB, LCI e LCA (sem pricing NTN-B)."""
-        dc = date.fromisoformat(data_compra_str)
-        dv = date.fromisoformat(vencimento_str)
-        if dc >= dv:
-            return None
-        tc     = taxa_pct / 100
-        hoje   = date.today()
-        # DU/252: convenção ANBIMA/B3 para todos os títulos de renda fixa
-        du_d   = calcular_du(dc, hoje)
-        du_t   = calcular_du(dc, dv)
-        anos_t = (dv - dc).days / 365
-        anos_r = max(1, round((dv - hoje).days / 365))
-        mam    = valor * (1 + tc) ** (du_d / 252)
-        vf     = valor * (1 + tc) ** (du_t / 252)
-        ps     = min(60.0, 10.0 + anos_r * 7.0)
-        # Selic e bancários: sem risco de MaM → posicao_score pleno
-        # Prefixado: tem risco de taxa → posicao_score reduzido
-        pos_sc = 25.0 if tipo_asset == "pre" else 40.0
-        return dict(
-            res={"mam": mam, "variacao_dia": 0.0, "pu_hoje": 0.0, "quantidade": 1.0},
-            taxa_mkt_pct=taxa_pct, taxa_vda_pct=None,
-            dv=dv, dc=dc, tc=tc, tm=tc,
-            cupom=False, pu_c=valor, cpns_h=[],
-            anos_tot=anos_t, anos_res=anos_r,
-            vf=vf, prazo_score=ps, posicao_score=pos_sc, score=ps + pos_sc,
-            taxa_pct=taxa_pct, tipo_asset=tipo_asset, is_simples=True,
-        )
+        return calcular_posicao_simples(titulo, tipo_asset, valor, taxa_pct,
+                                        data_compra_str, vencimento_str)
 
     def _render_calc(default_cap: float):
+        """Aba "Simulações": calculadora de aportes mensais com projeção e meta."""
         st.markdown("#### 💰  Calculadora de Aportes Mensais")
         st.caption("Simule quanto vai acumular com aportes regulares, ou quanto precisa poupar para atingir uma meta.")
 
@@ -319,7 +282,7 @@ def render():
                     "Ganho Líquido":   formatar_brl(_dr["fv_liq"] - _dr["total_inv"]),
                     "_fv":             _dr["fv_liq"],
                 })
-            _dc_rows_p.sort(key=lambda r: r["_fv"], reverse=True)
+            _dc_rows_p.sort(key=lambda r: cast(float, r["_fv"]), reverse=True)
             _dc_mp  = _dc_rows_p[0]["Produto"] if _dc_rows_p else ""
             _dc_df_p = pd.DataFrame([{k: v for k, v in r.items() if k != "_fv"} for r in _dc_rows_p])
             _dc_df_p.insert(0, "🏆", ["🏆" if r["Produto"] == _dc_mp else "" for r in _dc_rows_p])
@@ -392,7 +355,7 @@ def render():
                     "Juros trabalham": formatar_brl(_dc_meta - _dtot),
                     "_pmt":            _dpmt,
                 })
-            _dc_rows_r.sort(key=lambda r: r["_pmt"])
+            _dc_rows_r.sort(key=lambda r: cast(float, r["_pmt"]))
             _dc_mr  = _dc_rows_r[0]["Produto"] if _dc_rows_r else ""
             _dc_df_r = pd.DataFrame([{k: v for k, v in r.items() if k != "_pmt"} for r in _dc_rows_r])
             _dc_df_r.insert(0, "🏆", ["🏆" if r["Produto"] == _dc_mr else "" for r in _dc_rows_r])
@@ -401,14 +364,14 @@ def render():
             if _dc_rows_r:
                 _dc_best  = _dc_rows_r[0]
                 _dc_worst = _dc_rows_r[-1]
-                _dc_diff  = _dc_worst["_pmt"] - _dc_best["_pmt"]
-                _dc_juros = _dc_meta - (_dc_cap_r + _dc_best["_pmt"] * _dc_n_r)
+                _dc_diff  = cast(float, _dc_worst["_pmt"]) - cast(float, _dc_best["_pmt"])
+                _dc_juros = _dc_meta - (_dc_cap_r + cast(float, _dc_best["_pmt"]) * _dc_n_r)
                 st.info(
                     f"**{_dc_best['Produto']}** exige o menor aporte: "
-                    f"**{formatar_brl(_dc_best['_pmt'])}/mês** para atingir "
+                    f"**{formatar_brl(cast(float, _dc_best['_pmt']))}/mês** para atingir "
                     f"{formatar_brl(_dc_meta)} em {_dc_prazo_r} ano(s).\n\n"
                     f"Você economiza **{formatar_brl(_dc_diff)}/mês** vs. "
-                    f"**{_dc_worst['Produto']}** ({formatar_brl(_dc_worst['_pmt'])}/mês). "
+                    f"**{_dc_worst['Produto']}** ({formatar_brl(cast(float, _dc_worst['_pmt']))}/ mês). "
                     f"Os juros cobrem **{formatar_brl(_dc_juros)}** do seu objetivo.",
                     icon="💡",
                 )
@@ -426,6 +389,7 @@ def render():
 
     # ---- Formulário de adicionar posição (código inline, keys consistentes) ----
     def _render_form():
+        """Formulário de adição/edição de posição no portfólio."""
         _CAT_SELIC = sorted([k for k, v in TITULOS_BATALHA.items() if v.get("tipo") == "selic"])
         _CAT_PRE   = sorted([k for k, v in TITULOS_BATALHA.items() if v.get("tipo") == "pre"])
         _CATS_ALL  = {
@@ -997,7 +961,6 @@ def render():
     cpns_hoje           = calc["cpns_h"]
     resultado           = calc["res"]
     anos_restantes      = calc["anos_res"]
-    anos_totais         = calc["anos_tot"]
     valor_vencimento    = calc["vf"]
     prazo_score         = calc["prazo_score"]
     posicao_score       = calc["posicao_score"]
@@ -1550,7 +1513,7 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
             for s in _port_stats:
                 _por_tipo_cap[s["tipo"]] = _por_tipo_cap.get(s["tipo"], 0.0) + s["capital"]
 
-            _tipo_dominante = max(_por_tipo_cap, key=_por_tipo_cap.get)
+            _tipo_dominante = max(_por_tipo_cap, key=lambda k: _por_tipo_cap[k])
             _pct_dominante  = _por_tipo_cap[_tipo_dominante] / total_cap * 100
 
             # Tipos sem risco de MaM: concentração é oportunidade perdida, não perigo

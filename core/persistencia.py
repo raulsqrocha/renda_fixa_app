@@ -20,6 +20,7 @@ _IS_CLOUD = os.environ.get("HOME") == "/home/appuser"
 
 
 def _default_prefs() -> dict:
+    """Retorna o dicionário de preferências com todos os valores padrão do app."""
     return {
         # Dashboard — portfólio e análise
         "_portfolio":              [],
@@ -89,6 +90,8 @@ def _default_prefs() -> dict:
         "dash_calc_meta":          200_000.0,
         "dash_calc_prazo_proj":    5,
         "dash_calc_prazo_rev":     5,
+        "dash_calc_capital":       10_000.0,
+        "dash_calc_cap_rev":       10_000.0,
     }
 
 

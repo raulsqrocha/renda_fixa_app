@@ -15,12 +15,15 @@ Evolução futura:
     mudando apenas a função `obter_vna` — o restante do app não precisa mudar.
 """
 
+import logging
 import requests
 import pandas as pd
 import numpy as np
 import streamlit as st
 from datetime import datetime, date, timedelta
 import pytz
+
+_log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -98,32 +101,44 @@ CATEGORIAS_TITULOS: dict = {
     "Tesouro Educar+":             [k for k in TITULOS_CONFIG if "Educar+" in k],
 }
 
-# Taxas de referência para o fallback — extraídas do Tesouro Transparente em 20/05/2026
+# Taxas de referência para o fallback — extraídas do Tesouro Transparente em 26/05/2026
 _TAXAS_REF: dict = {
     # IPCA+ Principal
-    "Tesouro IPCA+ 2032":  7.83,
-    "Tesouro IPCA+ 2040":  7.32,
-    "Tesouro IPCA+ 2050":  7.04,
+    "Tesouro IPCA+ 2032": 7.75,
+    "Tesouro IPCA+ 2040": 7.27,
+    "Tesouro IPCA+ 2050": 7.02,
     # IPCA+ Juros Semestrais
-    "Tesouro IPCA+ com Juros Semestrais 2037":  7.59,
-    "Tesouro IPCA+ com Juros Semestrais 2045":  7.35,
-    "Tesouro IPCA+ com Juros Semestrais 2060":  7.22,
+    "Tesouro IPCA+ com Juros Semestrais 2037": 7.51,
+    "Tesouro IPCA+ com Juros Semestrais 2045": 7.31,
+    "Tesouro IPCA+ com Juros Semestrais 2060": 7.21,
     # Renda+ Aposentadoria Extra
     "Tesouro RendA+ 2030": 7.82,
     "Tesouro RendA+ 2035": 7.65,
-    "Tesouro RendA+ 2040": 7.50,
+    "Tesouro RendA+ 2040": 7.5,
     "Tesouro RendA+ 2045": 7.38,
     "Tesouro RendA+ 2050": 7.28,
-    "Tesouro RendA+ 2055": 7.20,
+    "Tesouro RendA+ 2055": 7.2,
     "Tesouro RendA+ 2060": 7.14,
     "Tesouro RendA+ 2065": 7.08,
-    # Educar+ (Tesouro Educa+ no CSV)
-    "Tesouro Educar+ 2027": 8.12, "Tesouro Educar+ 2028": 8.07, "Tesouro Educar+ 2029": 8.01,
-    "Tesouro Educar+ 2030": 7.95, "Tesouro Educar+ 2031": 7.90, "Tesouro Educar+ 2032": 7.85,
-    "Tesouro Educar+ 2033": 7.80, "Tesouro Educar+ 2034": 7.75, "Tesouro Educar+ 2035": 7.70,
-    "Tesouro Educar+ 2036": 7.65, "Tesouro Educar+ 2037": 7.59, "Tesouro Educar+ 2038": 7.52,
-    "Tesouro Educar+ 2039": 7.46, "Tesouro Educar+ 2040": 7.41, "Tesouro Educar+ 2041": 7.36,
-    "Tesouro Educar+ 2042": 7.32, "Tesouro Educar+ 2043": 7.28, "Tesouro Educar+ 2044": 7.24,
+    # Educar+
+    "Tesouro Educar+ 2027": 8.12,
+    "Tesouro Educar+ 2028": 8.04,
+    "Tesouro Educar+ 2029": 7.97,
+    "Tesouro Educar+ 2030": 7.89,
+    "Tesouro Educar+ 2031": 7.84,
+    "Tesouro Educar+ 2032": 7.8,
+    "Tesouro Educar+ 2033": 7.78,
+    "Tesouro Educar+ 2034": 7.74,
+    "Tesouro Educar+ 2035": 7.69,
+    "Tesouro Educar+ 2036": 7.64,
+    "Tesouro Educar+ 2037": 7.57,
+    "Tesouro Educar+ 2038": 7.5,
+    "Tesouro Educar+ 2039": 7.43,
+    "Tesouro Educar+ 2040": 7.38,
+    "Tesouro Educar+ 2041": 7.33,
+    "Tesouro Educar+ 2042": 7.29,
+    "Tesouro Educar+ 2043": 7.25,
+    "Tesouro Educar+ 2044": 7.23,
 }
 
 
@@ -165,7 +180,8 @@ def buscar_selic_meta_bcb() -> float:
         resp = requests.get(url, timeout=10)
         resp.raise_for_status()
         return float(resp.json()[0]["valor"])
-    except Exception:
+    except Exception as e:
+        _log.warning("BCB Selic meta indisponível (%s) — fallback 14.75%%", e)
         return 14.75
 
 
@@ -195,8 +211,8 @@ def buscar_selic_na_data(data_compra: "date") -> float:
         dados = resp.json()
         if dados:
             return float(dados[-1]["valor"])
-    except Exception:
-        pass
+    except Exception as e:
+        _log.warning("BCB Selic efetiva indisponível para %s (%s) — fallback 14.75%%", data_compra, e)
     return 14.75
 
 
@@ -214,9 +230,12 @@ def buscar_ipca_bcb() -> pd.DataFrame:
         df.columns = ["data", "valor"]
         df["data"]  = pd.to_datetime(df["data"], format="%d/%m/%Y")
         df["valor"] = df["valor"].astype(float)
-        return df.sort_values("data").reset_index(drop=True)
+        df = df.sort_values("data").reset_index(drop=True)
+        df["_is_fallback"] = False
+        return df
 
-    except Exception:
+    except Exception as e:
+        _log.warning("BCB IPCA API indisponível (%s) — usando série histórica local", e)
         return _ipca_fallback()
 
 
@@ -253,7 +272,9 @@ def _ipca_fallback() -> pd.DataFrame:
         0.16, 1.31, 1.32, 0.43, 0.43,
     ]
     datas = pd.date_range("2015-01-01", periods=137, freq="MS")
-    return pd.DataFrame({"data": datas, "valor": valores})
+    df = pd.DataFrame({"data": datas, "valor": valores})
+    df["_is_fallback"] = True
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +326,7 @@ def calcular_vna_em_data(df_ipca: pd.DataFrame, data_ref: date) -> float:
 # Tesouro Direto — preços e taxas
 # ---------------------------------------------------------------------------
 
-def _construir_nome_titulo(tipo_csv: str, ano_venc: int) -> str | None:
+def construir_nome_titulo(tipo_csv: str, ano_venc: int) -> str | None:
     """
     Mapeia o nome do tipo no CSV do Tesouro Transparente para o nome interno do app.
     Normaliza variantes de acento e mantém consistência com TITULOS_CONFIG.
@@ -374,7 +395,7 @@ def buscar_titulos_tesouro(chave_cache: str) -> pd.DataFrame:
             venc = row["Data Vencimento"]
             if pd.isnull(venc):
                 continue
-            nome = _construir_nome_titulo(tipo_csv, venc.year)
+            nome = construir_nome_titulo(tipo_csv, venc.year)
             if not nome or nome not in nomes_validos:
                 continue
             registros.append({
@@ -389,9 +410,12 @@ def buscar_titulos_tesouro(chave_cache: str) -> pd.DataFrame:
         if not registros:
             return _titulos_fallback()
 
-        return pd.DataFrame(registros).reset_index(drop=True)
+        df_out = pd.DataFrame(registros).reset_index(drop=True)
+        df_out["_is_fallback"] = False
+        return df_out
 
-    except Exception:
+    except Exception as e:
+        _log.warning("Tesouro Direto CSV indisponível (%s) — usando taxas de referência locais", e)
         return _titulos_fallback()
 
 
@@ -436,7 +460,9 @@ def _titulos_fallback() -> pd.DataFrame:
             "pu_venda":    0.0,
         })
 
-    return pd.DataFrame(registros)
+    df_fb = pd.DataFrame(registros)
+    df_fb["_is_fallback"] = True
+    return df_fb
 
 
 # ---------------------------------------------------------------------------
@@ -517,8 +543,22 @@ def obter_dados_completos() -> tuple[pd.DataFrame, pd.DataFrame, float]:
     df_ipca    : série histórica mensal do IPCA
     df_titulos : preços e taxas dos títulos Tesouro IPCA+
     vna        : VNA estimado atual (R$)
+
+    Efeito colateral: registra `st.session_state["_status_dados"]` indicando
+    se alguma fonte está usando dados de fallback (API indisponível).
     """
     df_ipca    = buscar_ipca_bcb()
     df_titulos = buscar_titulos_tesouro(chave_cache_mercado())
     vna        = calcular_vna_via_bcb(df_ipca)
+
+    def _e_fallback(df: pd.DataFrame) -> bool:
+        if df.empty or "_is_fallback" not in df.columns:
+            return False
+        return bool(df["_is_fallback"].iloc[0])
+
+    st.session_state["_status_dados"] = {
+        "ipca_fallback":    _e_fallback(df_ipca),
+        "titulos_fallback": _e_fallback(df_titulos),
+    }
+
     return df_ipca, df_titulos, vna

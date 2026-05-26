@@ -44,7 +44,7 @@ def _layout_base(titulo: str, yaxis_prefix: str = "R$ ") -> dict:
         ),
         hovermode="x unified",
         separators=",.",
-        legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor=GRID, orientation="h", y=-0.15),
+        legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor=GRID, orientation="h", y=-0.18),
         margin=dict(l=10, r=10, t=55, b=10),
     )
 
@@ -389,7 +389,6 @@ def grafico_cenarios(cenarios: dict, anos: int, valor_investido: float) -> go.Fi
             overlaying="y", side="right",
             ticksuffix="%", tickformat=".0f", showgrid=False,
         ),
-        legend=dict(orientation="h", y=-0.2),
     )
     return fig
 
@@ -501,7 +500,7 @@ def grafico_markowitz(analises: list, carteira_mix: dict | None = None, portfoli
     for a in analises:
         tipo = a["tipo"]
         nome_curto = a["nome"].replace("Tesouro ", "")
-        cor = _TIPO_COR[tipo]
+        cor = _TIPO_COR.get(tipo, AZUL)
         show_leg = tipo not in tipos_vistos
         tipos_vistos.add(tipo)
 
@@ -513,7 +512,7 @@ def grafico_markowitz(analises: list, carteira_mix: dict | None = None, portfoli
             text=[nome_curto],
             textposition="top center",
             textfont=dict(size=9, color=TEXTO),
-            name=_TIPO_NOME[tipo] if show_leg else None,
+            name=_TIPO_NOME.get(tipo, tipo) if show_leg else None,
             legendgroup=tipo,
             showlegend=show_leg,
             hovertemplate=(
@@ -556,7 +555,6 @@ def grafico_markowitz(analises: list, carteira_mix: dict | None = None, portfoli
                    tickformat=".2f", gridcolor=GRID),
         yaxis=dict(title="Retorno Esperado (% a.a.)", ticksuffix="%",
                    tickformat=".2f", gridcolor=GRID, tickprefix=""),
-        legend=dict(orientation="h", y=-0.22),
         separators=",.",
     )
     return fig
@@ -599,7 +597,6 @@ def grafico_cenarios_batalha(analises: list) -> go.Figure:
         yaxis=dict(title="Retorno Anualizado (% a.a.)", ticksuffix="%",
                    tickformat=".1f", gridcolor=GRID, tickprefix=""),
         xaxis_title="",
-        legend=dict(orientation="h", y=-0.22),
         separators=",.",
     )
     return fig
@@ -625,8 +622,10 @@ def grafico_retorno_por_horizonte(resultados_por_horizonte: dict, horizonte_atua
         rgb   = _hex_to_rgb(cor)
         nome_curto = nome.replace("Tesouro ", "")
 
-        xs_m, ys_m, ys_adv, ys_fav = [], [], [], []
-        xs_r, ys_r                  = [], []
+        xs_m: list[float] = []
+        ys_m: list[float] = []
+        ys_adv, ys_fav    = [], []
+        xs_r, ys_r        = [], []
         bridge_feito                = False
 
         for h in horizons:
@@ -705,7 +704,6 @@ def grafico_retorno_por_horizonte(resultados_por_horizonte: dict, horizonte_atua
         xaxis=dict(title="Horizonte de saída (anos)", dtick=1, gridcolor=GRID),
         yaxis=dict(title="Retorno esperado (% a.a.)", ticksuffix="%",
                    tickformat=".1f", tickprefix="", gridcolor=GRID),
-        legend=dict(orientation="h", y=-0.22),
         hovermode="x unified",
     )
     return fig

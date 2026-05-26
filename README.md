@@ -3,7 +3,8 @@
 > An interactive educational tool that demystifies Brazil's government bond market — showing investors the difference between **what they feel** (daily price volatility) and **what they actually have** (a locked real return).
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://fixacf.streamlit.app)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
+[![Tests](https://github.com/raulsqrocha/renda_fixa_app/actions/workflows/tests.yml/badge.svg)](https://github.com/raulsqrocha/renda_fixa_app/actions/workflows/tests.yml)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **[▶ Live Demo](https://fixacf.streamlit.app)**
@@ -96,6 +97,8 @@ All data is free, public, and requires no API keys.
 | Source | Data | Endpoint |
 |---|---|---|
 | [Banco Central do Brasil (BCB)](https://www.bcb.gov.br/) | Monthly IPCA inflation — last 132 months | SGS Series 433 |
+| [Banco Central do Brasil (BCB)](https://www.bcb.gov.br/) | Selic target rate (meta) | SGS Series 1178 |
+| [Banco Central do Brasil (BCB)](https://www.bcb.gov.br/) | Selic effective daily rate | SGS Series 4189 |
 | [Tesouro Transparente](https://www.tesourotransparente.gov.br/) | Live prices, rates, and bid-ask spreads for all Tesouro Direto bonds | Official CSV |
 
 The app calculates the **VNA** (Valor Nominal Atualizado — the inflation-adjusted face value of NTN-B bonds) by compounding historical IPCA from the ANBIMA base of Dec/2014 (R$2,712.00). Cache refreshes automatically at 14:00 Brasília time, after Tesouro Direto's daily close.
@@ -146,6 +149,13 @@ streamlit run app.py
 
 The app opens at `http://localhost:8501`. No environment variables or API keys required.
 
+To run the test suite locally:
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ --cov=core --cov=telas
+```
+
 ---
 
 ## 📁 Project Structure
@@ -161,15 +171,21 @@ renda_fixa_app/
 ├── core/
 │   ├── financas.py               # Financial calculations (pricing, IR, IOF, MtM, health score)
 │   ├── dados.py                  # Data fetching and caching (BCB + Tesouro Transparente)
+│   ├── batalha.py                # Markowitz frontier and portfolio optimization
 │   ├── graficos.py               # Plotly chart builders
 │   ├── persistencia.py           # User preferences persistence across sessions
 │   └── estilos.py                # Global CSS and dark theme
 ├── telas/
 │   ├── dashboard.py              # Dashboard screen logic
+│   ├── _dashboard_metricas.py    # NTN-B position metrics (isolated for testability)
 │   ├── batalha.py                # Which Asset screen logic
 │   ├── comparar.py               # Compare Products screen logic
 │   └── simulador.py              # Advanced Simulator screen logic
-└── requirements.txt
+├── tests/                        # pytest test suite (297 tests, ruff + mypy clean)
+├── scripts/
+│   └── atualizar_taxas_ref.py    # Helper to refresh fallback reference rates
+├── requirements.txt
+└── requirements-dev.txt          # pytest, pytest-cov, ruff, mypy
 ```
 
 ---

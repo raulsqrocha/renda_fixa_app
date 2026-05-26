@@ -10,6 +10,7 @@ import pandas as pd
 
 from core.dados import obter_dados_completos, montar_catalogo_batalha, timestamp_ultima_atualizacao, chave_cache_mercado
 from core.persistencia import carregar, salvar, inicializar_session
+from core.batalha import carteira_mista, gerar_portfolios_aleatorios
 from core.financas import (
     analise_batalha,
     formatar_brl,
@@ -17,14 +18,13 @@ from core.financas import (
     retorno_liquido_ir,
     retorno_saida_antecipada,
     retorno_hold_to_mat_reinvestido,
-    carteira_mista,
-    gerar_portfolios_aleatorios,
 )
 from core.graficos import grafico_markowitz, grafico_cenarios_batalha, grafico_retorno_por_horizonte
 
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _analise_cached(nome, tipo, taxa, anos_total, anos_saida, ipca, choque, com_ir, selic):
+    """Wrapper para analise_batalha; isolado para facilitar cache no Streamlit."""
     return analise_batalha(nome=nome, tipo=tipo, taxa=taxa, anos_total=anos_total,
                            anos_saida=anos_saida, ipca=ipca, choque=choque,
                            com_ir=com_ir, selic=selic)
@@ -53,13 +53,18 @@ _RISCO_MAP = {
 }
 
 def _risco_expo(tipo, anos_expo):
-    if tipo == "selic" or anos_expo == 0: return _RISCO_MAP[0]
-    if anos_expo <= 2:                    return _RISCO_MAP[1]
-    if anos_expo <= 5:                    return _RISCO_MAP[2]
+    """Converte anos de exposição a MaM em rótulo de risco textual."""
+    if tipo == "selic" or anos_expo == 0:
+        return _RISCO_MAP[0]
+    if anos_expo <= 2:
+        return _RISCO_MAP[1]
+    if anos_expo <= 5:
+        return _RISCO_MAP[2]
     return _RISCO_MAP[3]
 
 
 def _winner(analises: list) -> dict:
+    """Retorna o título com melhor índice retorno/risco (Sharpe simplificado)."""
     return max(analises, key=lambda a: a["ret_neu"] / max(a["risco_std"], 0.01))
 
 
@@ -78,6 +83,7 @@ _PERFIL_EMOJI = {"Conservador": "🟢", "Moderado": "🟡", "Arrojado": "🔴"}
 
 
 def _winner_por_perfil(analises: list, perfil: str) -> dict:
+    """Seleciona o título vencedor segundo o perfil de risco do usuário."""
     if perfil == "Conservador":
         return min(analises, key=lambda a: a["risco_std"])
     if perfil == "Arrojado":
@@ -86,6 +92,7 @@ def _winner_por_perfil(analises: list, perfil: str) -> dict:
 
 
 def _insight_texto(w: dict, horizonte: int, ipca: float, com_ir: bool) -> str:
+    """Gera o parágrafo de insight para o título vencedor, adaptado ao tipo e perfil."""
     nome  = w["nome"].replace("Tesouro ", "")
     tipo  = w["tipo"]
     expo  = w["anos_expo"]
@@ -144,6 +151,7 @@ def _insight_texto(w: dict, horizonte: int, ipca: float, com_ir: bool) -> str:
 
 
 def render():
+    """Tela 2 — Qual Ativo Escolher?: comparativo de cenários, Markowitz e retorno por horizonte."""
     st.session_state["_page_id"] = "batalha"
 
     # Carrega preferências salvas antes de qualquer widget
@@ -295,7 +303,6 @@ def render():
     ip = ipca_pct  / 100
     sl = selic_pct / 100
 
-    selic_ex  = next((t for t in catalogo if t["tipo"] == "selic"), None)
     pre_ex    = next((t for t in catalogo if t["tipo"] == "pre"),   None)
     ipca_ex   = (
         next((t for t in catalogo if t["tipo"] == "ipca_mais" and "IPCA+ 2029" in t["nome"]), None)
@@ -359,7 +366,8 @@ Com Selic em **{selic_pct:.1f}%**, {formatar_brl(capital)} viram **{formatar_brl
                     vf_pr_l   = capital * (1 + retorno_liquido_ir(tp, H)) ** H if com_ir else capital * (1 + tp) ** H
                     real_pre  = ((1 + tp) / (1 + ip)) ** H - 1
                     r_adv_p   = retorno_saida_antecipada(tp, tp + ck, T_pre, H, "pre")
-                    if com_ir: r_adv_p = retorno_liquido_ir(r_adv_p, H)
+                    if com_ir:
+                        r_adv_p = retorno_liquido_ir(r_adv_p, H)
                     vf_adv_p  = capital * (1 + r_adv_p) ** H
                     delta_str = f"Real projetado: {real_pre*100:.1f}% acima do IPCA"
 
@@ -422,7 +430,8 @@ f"⚠️ Se taxas subirem {choque_pp:.2f} p.p., {formatar_brl(capital)} → **{f
                     vf_ip     = capital * (1 + nom_ip) ** H
                     vf_ip_l   = capital * (1 + retorno_liquido_ir(nom_ip, H)) ** H if com_ir else vf_ip
                     r_adv_ip  = retorno_saida_antecipada(tr, tr + ck, T_ip, H, "ipca_mais", ip)
-                    if com_ir: r_adv_ip = retorno_liquido_ir(r_adv_ip, H)
+                    if com_ir:
+                        r_adv_ip = retorno_liquido_ir(r_adv_ip, H)
                     vf_adv_ip = capital * (1 + r_adv_ip) ** H
                     delta_str_ip = f"Nominal: ~{nom_ip*100:.1f}% com IPCA {ipca_pct:.1f}%"
 

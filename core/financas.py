@@ -1,13 +1,63 @@
 """
-Módulo de cálculos financeiros para títulos Tesouro IPCA+ (NTN-B).
+Cálculos financeiros centrais do app Renda Fixa CF.
 
-Fórmulas baseadas na metodologia ANBIMA de precificação de títulos públicos.
+Conteúdo principal:
+  - Calendário ANBIMA e dias úteis (DU/252)
+  - Precificação NTN-B: PU, VNA, cupom semestral
+  - Métricas de carteira: MaM, carrego, variação diária
+  - Série temporal para o Gráfico do Paradoxo (com e sem cupons)
+  - Cenários de retorno: IPCA+, saída antecipada, reinvestimento pós-vencimento
+  - Batalha de títulos: retorno por cenário (adverso / neutro / favorável)
+  - Calculadora de aportes: FV mensal e PMT para meta
+  - Tributação: IR regressivo e IOF diário
+
+Metodologia: ANBIMA, B3 — DU/252, VNA base dez/2014, cupom 6% a.a. NTN-B.
 """
 
 import numpy as np
 import pandas as pd
 from datetime import date, timedelta
-from typing import List
+from typing import TypedDict
+
+
+class FvMensalResult(TypedDict):
+    fv_liq:    float
+    fv_bruto:  float
+    total_inv: float
+    ir:        float
+
+
+class MetricasCarteira(TypedDict):
+    mam:          float
+    vencimento:   float
+    variacao_dia: float
+    pu_hoje:      float
+    pu_carrego:   float
+    quantidade:   float
+
+
+class AnaliseBatalha(TypedDict):
+    nome:        str
+    tipo:        str
+    ret_adv:     float
+    ret_neu:     float
+    ret_fav:     float
+    ret_real:    float
+    risco_std:   float
+    risco_label: str
+    anos_expo:   float
+    hold_to_mat: bool
+    reinvest:    bool
+
+
+class RetornoCenarioIPCA(TypedDict):
+    taxa_nominal_aa:     float
+    valor_final:         float
+    retorno_nominal_pct: float
+    retorno_real_pct:    float
+
+
+_TIPOS_BATALHA_VALIDOS: frozenset[str] = frozenset({"selic", "pre", "ipca_mais"})
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +86,7 @@ def _computar_feriados_anbima(ano_inicio: int = 2015, ano_fim: int = 2070) -> li
         h = (19 * a + b - d - g + 15) % 30
         i = c // 4
         k = c % 4
-        l = (32 + 2 * e + 2 * i - h - k) % 7
+        l = (32 + 2 * e + 2 * i - h - k) % 7  # noqa: E741
         m = (a + 11 * h + 22 * l) // 451
         mes_p = (h + l - 7 * m + 114) // 31
         dia_p = ((h + l - 7 * m + 114) % 31) + 1
@@ -88,12 +138,12 @@ def calcular_du(data_inicio: date, data_fim: date) -> int:
     )))
 
 
-def datas_cupom_ntnb(data_hoje: date, data_vencimento: date) -> List[date]:
+def datas_cupom_ntnb(data_hoje: date, data_vencimento: date) -> list[date]:
     """
     Gera lista de datas de pagamento de cupons NTN-B.
     Por convenção ANBIMA: 15 de maio e 15 de novembro de cada ano.
     """
-    datas: List[date] = []
+    datas: list[date] = []
     for ano in range(data_hoje.year, data_vencimento.year + 1):
         for mes in (5, 11):
             dt = date(ano, mes, 15)
@@ -122,7 +172,7 @@ def pu_ntnb(
     taxa_real: float,
     data_hoje: date,
     data_vencimento: date,
-    datas_cupom: List[date],
+    datas_cupom: list[date],
     taxa_cupom_anual: float = 0.06,
 ) -> float:
     """
@@ -178,8 +228,8 @@ def metricas_carteira(
     vna: float,
     data_hoje: date,
     data_vencimento: date,
-    datas_cupom: List[date],
-) -> dict:
+    datas_cupom: list[date],
+) -> MetricasCarteira:
     """
     Calcula os três valores-chave do Dashboard:
 
@@ -257,6 +307,20 @@ def serie_paradoxo(
     taxas_mam = taxa_real_mercado + np.cumsum(shocks)
     taxas_mam = np.clip(taxas_mam, 0.02, 0.20)
 
+    if not tem_cupom:
+        # Caminho vetorizado: sem cupons → PU = VNA / (1+r)^(du/252)
+        # np.busday_count aceita arrays → cálculo em lote sem loop Python
+        venc_d64 = np.datetime64(data_vencimento, 'D')
+        dt_d64   = np.array([np.datetime64(d, 'D') for d in datas.date])
+        du_arr   = np.maximum(0, np.busday_count(dt_d64, venc_d64, busdaycal=_CALENDARIO_ANBIMA))
+        exp_arr  = du_arr / 252.0
+        # Quando du=0 (data de vencimento), (1+r)^0 = 1 → PU = VNA (correto)
+        vals_mam_arr     = quantidade * vna / (1.0 + taxas_mam) ** exp_arr
+        vals_carrego_arr = quantidade * vna / (1.0 + taxa_real_contratada) ** exp_arr
+        return pd.DataFrame({'data': datas, 'mam': vals_mam_arr, 'carrego': vals_carrego_arr})
+
+    # Caminho com cupons (Juros Semestrais): loop necessário porque o conjunto
+    # de cupons futuros muda a cada data → dente de serra natural
     vals_mam, vals_carrego = [], []
 
     for i, dt in enumerate(datas.date):
@@ -265,25 +329,12 @@ def serie_paradoxo(
             vals_carrego.append(quantidade * vna)
             continue
 
-        du = calcular_du(dt, data_vencimento)
+        cpns = datas_cupom_ntnb(dt, data_vencimento)
+        vals_mam.append(pu_ntnb(vna, taxas_mam[i], dt, data_vencimento, cpns) * quantidade)
+        vals_carrego.append(pu_ntnb(vna, taxa_real_contratada, dt, data_vencimento, cpns) * quantidade)
 
-        if tem_cupom:
-            # Juros Semestrais: PU inclui fluxo de cupons → dente de serra natural
-            cpns = datas_cupom_ntnb(dt, data_vencimento)
-            vals_mam.append(pu_ntnb(vna, taxas_mam[i], dt, data_vencimento, cpns) * quantidade)
-            vals_carrego.append(pu_ntnb(vna, taxa_real_contratada, dt, data_vencimento, cpns) * quantidade)
-        else:
-            # Principal: desconto simples sem cupons → curva exponencial lisa
-            if du > 0:
-                vals_mam.append(quantidade * vna / (1 + taxas_mam[i]) ** (du / 252))
-                vals_carrego.append(quantidade * vna / (1 + taxa_real_contratada) ** (du / 252))
-            else:
-                vals_mam.append(quantidade * vna)
-                vals_carrego.append(quantidade * vna)
-
-    n_real = len(vals_mam)
     return pd.DataFrame({
-        'data':    datas[:n_real],
+        'data':    datas[:len(vals_mam)],
         'mam':     vals_mam,
         'carrego': vals_carrego,
     })
@@ -335,7 +386,7 @@ def retorno_cenario_ipca(
     ipca_anual: float,
     anos: int,
     valor_inicial: float,
-) -> dict:
+) -> RetornoCenarioIPCA:
     """
     Retorno do Tesouro IPCA+ em um cenário de IPCA projetado.
 
@@ -382,6 +433,9 @@ def retorno_saida_antecipada(
     H = anos_saida
     T = anos_total
 
+    if H <= 0:
+        return float("nan")
+
     if tipo == "selic":
         return taxa_compra
 
@@ -402,9 +456,12 @@ def retorno_saida_antecipada(
 def aliquota_ir_renda_fixa(horizonte_anos: float) -> float:
     """Alíquota regressiva de IR sobre renda fixa (Tesouro Direto)."""
     dias = horizonte_anos * 365
-    if dias <= 180:  return 0.225
-    if dias <= 360:  return 0.200
-    if dias <= 720:  return 0.175
+    if dias <= 180:
+        return 0.225
+    if dias <= 360:
+        return 0.200
+    if dias <= 720:
+        return 0.175
     return 0.150
 
 
@@ -500,7 +557,7 @@ def analise_batalha(
     choque: float = 0.01,
     com_ir: bool = False,
     selic: float = 0.0,
-) -> dict:
+) -> AnaliseBatalha:
     """
     Calcula retorno e risco para um título nos três cenários de taxa.
 
@@ -512,6 +569,9 @@ def analise_batalha(
     Risco = desvio-padrão dos três retornos anualizados.
     Se com_ir=True, IR regressivo é aplicado sobre o lucro antes do cálculo de risco.
     """
+    if tipo not in _TIPOS_BATALHA_VALIDOS:
+        raise ValueError(f"tipo desconhecido para analise_batalha: {tipo!r}")
+
     t  = taxa  / 100
     ip = ipca  / 100
     ck = choque / 100
@@ -577,67 +637,7 @@ def analise_batalha(
     }
 
 
-def gerar_portfolios_aleatorios(analises: list, n: int = 400, seed: int = 42) -> list:
-    """
-    Gera n portfólios aleatórios via amostragem Dirichlet (Monte Carlo).
-    Usado para plotar a nuvem de pontos da fronteira eficiente de Markowitz.
-    """
-    k = len(analises)
-    if k < 2:
-        return []
-    rng = np.random.default_rng(seed)
-    adv = np.array([a["ret_adv"] for a in analises])
-    neu = np.array([a["ret_neu"] for a in analises])
-    fav = np.array([a["ret_fav"] for a in analises])
-    out = []
-    for _ in range(n):
-        w     = rng.dirichlet(np.ones(k))
-        r_adv = float(w @ adv)
-        r_neu = float(w @ neu)
-        r_fav = float(w @ fav)
-        out.append({
-            "ret_adv":   r_adv,
-            "ret_neu":   r_neu,
-            "ret_fav":   r_fav,
-            "risco_std": float(np.std([r_adv, r_neu, r_fav])),
-        })
-    return out
-
-
-def carteira_mista(
-    analise_principal: dict,
-    analise_liquida: dict,
-    peso_principal: float = 0.70,
-) -> dict:
-    """
-    Métricas de uma carteira com dois ativos nos três cenários de taxa.
-
-    Retorno combinado = média ponderada dos retornos de cada cenário.
-    Risco = desvio-padrão dos três retornos ponderados.
-    (Modelo co-movimento: mesmos choques macroeconômicos nos dois ativos.)
-    """
-    wl = 1.0 - peso_principal
-
-    r_adv = peso_principal * analise_principal["ret_adv"] + wl * analise_liquida["ret_adv"]
-    r_neu = peso_principal * analise_principal["ret_neu"] + wl * analise_liquida["ret_neu"]
-    r_fav = peso_principal * analise_principal["ret_fav"] + wl * analise_liquida["ret_fav"]
-    risco = float(np.std([r_adv, r_neu, r_fav]))
-
-    return {
-        "ret_adv":        r_adv,
-        "ret_neu":        r_neu,
-        "ret_fav":        r_fav,
-        "risco_std":      risco,
-        "peso_principal": peso_principal,
-        "peso_liquida":   wl,
-        "nome_principal": analise_principal["nome"],
-        "nome_liquida":   analise_liquida["nome"],
-        "tipo_principal": analise_principal["tipo"],
-    }
-
-
-
-def fv_mensal(taxa_a: float, n_meses: int, cap: float, pmt: float, aliq: float) -> dict:
+def fv_mensal(taxa_a: float, n_meses: int, cap: float, pmt: float, aliq: float) -> FvMensalResult:
     """Valor futuro com aportes mensais. IR sobre o ganho total no vencimento."""
     r_m = (1 + taxa_a) ** (1 / 12) - 1 if taxa_a > 0 else 0.0
     n = float(n_meses)

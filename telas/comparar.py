@@ -32,6 +32,7 @@ def _taxa_bruta_necessaria(taxa_isenta: float, aliq_ir: float) -> float:
 
 
 def render():
+    """Tela 4 — Comparar Produtos: Tesouro vs. CDB/LCI/LCA com equivalência de IR."""
     st.session_state["_page_id"] = "comparar"
 
     _prefs = carregar()
