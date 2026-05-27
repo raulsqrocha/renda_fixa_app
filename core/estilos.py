@@ -208,7 +208,7 @@ def sidebar_info() -> None:
             horizonte = st.session_state.get("bat_horizonte", 3)
             capital   = st.session_state.get("bat_capital", 10_000.0)
             ipca      = st.session_state.get("bat_ipca", 5.0)
-            selic     = st.session_state.get("bat_selic", 13.0)
+            selic     = st.session_state.get("bat_selic", 14.75)
             st.markdown(f"""
 <div style="background:#1C2331; border:1px solid #2D3748; border-radius:10px;
             padding:0.8rem 1rem; margin-bottom:1.2rem;">

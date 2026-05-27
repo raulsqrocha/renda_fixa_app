@@ -30,7 +30,7 @@ _log = logging.getLogger(__name__)
 # Constantes
 # ---------------------------------------------------------------------------
 
-URL_BCB_IPCA    = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/140?formato=json"
+URL_BCB_IPCA    = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/200?formato=json"
 # Tesouro Transparente — CSV oficial, gratuito, sem auth, atualização diária
 URL_TESOURO_CSV = (
     "https://www.tesourotransparente.gov.br/ckan/dataset/"
@@ -242,7 +242,7 @@ def buscar_ipca_bcb() -> pd.DataFrame:
 def _ipca_fallback() -> pd.DataFrame:
     """
     Série histórica real do IPCA mensal: jan/2015 a mai/2026 (137 meses).
-    Jan–dez/2025: dados oficiais. Jan–mai/2026: estimativas — atualizar quando BCB publicar.
+    Jan–dez/2025: oficiais BCB. Jan–abr/2026: oficiais BCB. Mai/2026: estimativa.
     Usada quando a API do BCB está indisponível.
     """
     valores = [
@@ -266,10 +266,10 @@ def _ipca_fallback() -> pd.DataFrame:
         0.53, 0.84, 0.71, 0.61, 0.23, -0.08, 0.12, -0.02, 0.26, 0.24, 0.28, 0.62,
         # 2024
         0.42, 0.83, 0.16, 0.38, 0.46, 0.20, 0.38, -0.02, 0.44, 0.56, 0.39, 0.52,
-        # 2025
-        0.16, 1.31, 1.32, 0.43, 0.43, 0.24, 0.28, 0.17, 0.44, 0.56, 0.39, 0.52,
-        # 2026 (estimativas — atualize quando BCB publicar os dados oficiais)
-        0.16, 1.31, 1.32, 0.43, 0.43,
+        # 2025 — fonte: BCB Série 433 (verificado em 27/05/2026)
+        0.16, 1.31, 0.56, 0.43, 0.26, 0.24, 0.26, -0.11, 0.48, 0.09, 0.18, 0.33,
+        # 2026 (jan–abr: oficiais BCB; mai: estimativa — atualizar quando publicado)
+        0.33, 0.70, 0.88, 0.67, 0.43,
     ]
     datas = pd.date_range("2015-01-01", periods=137, freq="MS")
     df = pd.DataFrame({"data": datas, "valor": valores})
@@ -423,7 +423,7 @@ def _titulos_fallback() -> pd.DataFrame:
     """
     Dados de referência para quando o CSV do Tesouro Transparente está indisponível.
     Inclui IPCA+, RendA+, Educar+ (via TITULOS_CONFIG) e Selic/Prefixado (via TITULOS_BATALHA).
-    Taxas em _TAXAS_REF extraídas em 20/05/2026 — atualizar periodicamente.
+    Taxas em _TAXAS_REF extraídas em 26/05/2026 — atualizar periodicamente.
     """
     hoje = date.today()
     registros = []

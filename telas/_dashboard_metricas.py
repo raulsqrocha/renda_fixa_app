@@ -136,7 +136,9 @@ def calcular_posicao_ntnb(
 
     anos_tot = (dv - dc).days / 365
     anos_res = max(1, round((dv - date.today()).days / 365))
-    vf       = valor * (1 + tc) ** anos_tot
+    # Valor no vencimento: usa carrego do pu_ntnb (já inclui VNA atual e DU/252)
+    # Mais correto que valor*(1+tc)^anos pois captura IPCA acumulado e convenção 252.
+    vf       = res["vencimento"]
 
     diff_pct = (res["mam"] - valor) / valor * 100
     ps       = min(SCORE_PRAZO_MAX, SCORE_PRAZO_BASE + anos_res * SCORE_PRAZO_POR_ANO)

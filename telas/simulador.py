@@ -215,7 +215,7 @@ def render():
                 "Cenário":                    nome,
                 "Taxa Nominal a.a.":          f"{c['taxa_nominal_aa']:.2f}%",
                 "Valor Final":                formatar_brl(c['valor_final']),
-                "Retorno Nominal Acumulado": f"{c['retorno_nominal_pct']:.0f}x o capital" if c['retorno_nominal_pct'] > 1000 else f"{c['retorno_nominal_pct']:.1f}%",
+                "Retorno Nominal Acumulado": f"{c['retorno_nominal_pct']/100 + 1:.1f}× o capital inicial" if c['retorno_nominal_pct'] > 1000 else f"{c['retorno_nominal_pct']:.1f}%",
                 "Ganho Real ✅":              f"+{c['retorno_real_pct']:.1f}%",
             })
 
@@ -635,12 +635,12 @@ seu poder de compra em **todos** esses cenários — é exatamente para isso que
             )
             _rh_pre = st.number_input(
                 "Pré-Fixado (% a.a. nominal)", min_value=1.0, max_value=30.0,
-                value=st.session_state.get("sim_rh_pre", 13.5),
+                value=st.session_state.get("sim_rh_pre", 14.5),
                 step=0.1, format="%.2f", key="sim_rh_pre",
             )
             _rh_selic = st.number_input(
                 "Selic média (% a.a.)", min_value=1.0, max_value=30.0,
-                value=st.session_state.get("sim_rh_selic", 10.5),
+                value=st.session_state.get("sim_rh_selic", 14.75),
                 step=0.1, format="%.2f", key="sim_rh_selic",
             )
         with _rh_c2:
@@ -735,15 +735,15 @@ seu poder de compra em **todos** esses cenários — é exatamente para isso que
         "sim_ipca_estresse":  st.session_state.get("sim_ipca_estresse", 9.0),
         "sim_prazo_saida":    st.session_state.get("sim_prazo_saida", 3),
         "sim_curva_slope":    st.session_state.get("sim_curva_slope", 0.0),
-        "sim_di_jan27":       st.session_state.get("sim_di_jan27", 13.20),
-        "sim_di_jan28":       st.session_state.get("sim_di_jan28", 13.40),
-        "sim_di_jan29":       st.session_state.get("sim_di_jan29", 13.55),
-        "sim_di_jan31":       st.session_state.get("sim_di_jan31", 13.68),
-        "sim_di_jan33":       st.session_state.get("sim_di_jan33", 13.82),
-        "sim_di_jan35":       st.session_state.get("sim_di_jan35", 13.90),
+        "sim_di_jan27":       st.session_state.get("sim_di_jan27", 14.75),
+        "sim_di_jan28":       st.session_state.get("sim_di_jan28", 14.70),
+        "sim_di_jan29":       st.session_state.get("sim_di_jan29", 14.65),
+        "sim_di_jan31":       st.session_state.get("sim_di_jan31", 14.55),
+        "sim_di_jan33":       st.session_state.get("sim_di_jan33", 14.40),
+        "sim_di_jan35":       st.session_state.get("sim_di_jan35", 14.25),
         "sim_rh_cap":         st.session_state.get("sim_rh_cap",         10_000.0),
-        "sim_rh_pre":         st.session_state.get("sim_rh_pre",         13.5),
-        "sim_rh_selic":       st.session_state.get("sim_rh_selic",       10.5),
+        "sim_rh_pre":         st.session_state.get("sim_rh_pre",         14.5),
+        "sim_rh_selic":       st.session_state.get("sim_rh_selic",       14.75),
         "sim_rh_ipca_plus":   st.session_state.get("sim_rh_ipca_plus",   taxa_atual_pct),
         "sim_rh_ano":         st.session_state.get("sim_rh_ano",         None),
     })

@@ -21,7 +21,7 @@ from telas._dashboard_metricas import (
 _HOJE = date.today()
 _DC   = _HOJE - timedelta(days=365)         # compra 1 ano atrás
 _DV   = date(2035, 8, 15)                   # vencimento distante
-_VNA  = 4_200.0
+_VNA  = 5_500.0  # VNA coerente com IPCA artificial de 0.5%/mês × 137 meses ≈ 5_367
 
 
 def _df_titulos(nome="Tesouro IPCA+ 2035", taxa_compra=7.50, taxa_venda=7.53):

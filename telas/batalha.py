@@ -304,10 +304,7 @@ def render():
     sl = selic_pct / 100
 
     pre_ex    = next((t for t in catalogo if t["tipo"] == "pre"),   None)
-    ipca_ex   = (
-        next((t for t in catalogo if t["tipo"] == "ipca_mais" and "IPCA+ 2029" in t["nome"]), None)
-        or next((t for t in catalogo if t["tipo"] == "ipca_mais" and "IPCA+" in t["nome"]), None)
-    )
+    ipca_ex   = next((t for t in catalogo if t["tipo"] == "ipca_mais" and "IPCA+" in t["nome"]), None)
     renda_ex  = next((t for t in catalogo if "RendA+" in t["nome"]), None)
     educar_ex = next((t for t in catalogo if "Educar+" in t["nome"]), None)
 
