@@ -105,7 +105,7 @@ def render():
             if not _m_sl.empty:
                 _spread_sl = _m_sl.iloc[0]["taxa_compra"]
                 st.metric(
-                    "💰 Tesouro Selic",
+                    "Tesouro Selic",
                     f"~{_selic_meta:.2f}% a.a.",
                     f"Pós-fixado · Selic {_selic_meta:.2f}% + spread {_spread_sl:.2f}%",
                     delta_color="off",
@@ -126,7 +126,7 @@ def render():
             if not _m_pre.empty:
                 _p = _m_pre.iloc[0]
                 st.metric(
-                    f"📌 Pré {_p['nome'].split()[-1]}", f"{_p['taxa_compra']:.2f}% a.a.",
+                    f"Pré {_p['nome'].split()[-1]}", f"{_p['taxa_compra']:.2f}% a.a.",
                     "Nominal · taxa travada", delta_color="off",
                     help=(
                         "**Taxa nominal pré-fixada** — definida no momento da compra e "
@@ -142,7 +142,7 @@ def render():
                 _ip = _m_ip.iloc[0]
                 _ip_label = _ip["nome"].replace("Tesouro ", "")
                 st.metric(
-                    f"🛡️ {_ip_label}", f"{_ip['taxa_compra']:.2f}% real",
+                    f"{_ip_label}", f"{_ip['taxa_compra']:.2f}% real",
                     "IPCA + taxa real", delta_color="off",
                     help=(
                         "**Taxa real** contratada acima do IPCA — seu poder de compra "
@@ -155,8 +155,6 @@ def render():
                         "maior a sensibilidade a variações de taxa."
                     ),
                 )
-        st.divider()
-
     # -----------------------------------------------------------------------
     # Helper: calcula todas as métricas de uma posição a partir dos inputs
     # -----------------------------------------------------------------------
@@ -173,7 +171,7 @@ def render():
 
     def _render_calc(default_cap: float):
         """Aba "Simulações": calculadora de aportes mensais com projeção e meta."""
-        st.markdown("#### 💰  Calculadora de Aportes Mensais")
+        st.markdown("#### Calculadora de Aportes Mensais")
         st.caption("Simule quanto vai acumular com aportes regulares, ou quanto precisa poupar para atingir uma meta.")
 
         with st.expander("⚙️  Taxas de Referência", expanded=False):
@@ -245,8 +243,8 @@ def render():
         _isentos_dc = {"LCI", "LCA"}
 
         _dtab_proj, _dtab_rev = st.tabs([
-            "📈  Se eu poupar X/mês, quanto terei?",
-            "🎯  Quanto preciso poupar por mês?",
+            "Se eu poupar X/mês, quanto terei?",
+            "Quanto preciso poupar por mês?",
         ])
 
         with _dtab_proj:
@@ -385,7 +383,7 @@ def render():
     portfolio = st.session_state["_portfolio"]
 
     st.divider()
-    st.subheader("💼  Seu Portfólio")
+    st.subheader(":material/account_balance_wallet:  Portfólio")
 
     # ---- Formulário de adicionar posição (código inline, keys consistentes) ----
     def _render_form():
@@ -544,7 +542,7 @@ def render():
             "Adicione sua primeira posição abaixo ou carregue um exemplo.",
             icon="👋",
         )
-        if st.button("📋  Carregar Exemplo: Tesouro IPCA+ 2032 comprado em 20/05/2026", type="secondary"):
+        if st.button("Carregar Exemplo: Tesouro IPCA+ 2032 comprado em 20/05/2026", type="secondary"):
             c_ex = _calcular("Tesouro IPCA+ 2032", 15_000.0, 7.50, "2026-05-20")
             if c_ex:
                 st.session_state["_portfolio"] = [dict(
@@ -918,7 +916,7 @@ def render():
         return
 
     st.divider()
-    st.subheader("🔍  Análise Detalhada")
+    st.subheader(":material/analytics:  Análise Detalhada")
 
     if "_analysis_pos_idx" not in st.session_state:
         st.session_state["_analysis_pos_idx"] = 0
@@ -978,10 +976,10 @@ def render():
     # Abas
     # -----------------------------------------------------------------------
     tab_pos, tab_sim, tab_port, tab_util = st.tabs([
-        "📊  Posição",
-        "⚡  Simulações",
-        "📈  Portfólio",
-        "🛠️  Utilitários",
+        "Posição",
+        "Simulações",
+        "Portfólio",
+        "Utilitários",
     ])
 
     # ============================= ABA 1: POSIÇÃO ============================
@@ -1047,7 +1045,7 @@ def render():
             col_sg, col_sc = st.columns([2.5, 1])
             with col_sg:
                 st.markdown("---")
-                st.markdown("#### 📊  Projeção de Crescimento")
+                st.markdown("#### Projeção de Crescimento")
                 # Projeção a partir do valor acumulado hoje (mam) até o vencimento.
                 # Usar valor_investido como base deixaria o gráfico inconsistente com
                 # a métrica "No Vencimento" para posições mantidas há algum tempo.
@@ -1141,7 +1139,7 @@ def render():
                     else f"+{formatar_brl(delta_vs)} vs. capital"
                 )
                 st.metric(
-                    "💸  Resgate Antecipado Hoje", formatar_brl(resultado["mam"]),
+                    "Resgate Antecipado Hoje", formatar_brl(resultado["mam"]),
                     delta_str, delta_color="normal",
                     help="Valor que você receberia se vender hoje — sujeito à MaM",
                 )
@@ -1157,11 +1155,11 @@ def render():
             with col3:
                 ganho_real_pct = (valor_vencimento / valor_investido - 1) * 100
                 if "RendA+" in titulo_sel:
-                    lbl = "🏦  Capital Acumulado (RendA+)"
+                    lbl = "Capital Acumulado (RendA+)"
                 elif "Educar+" in titulo_sel:
-                    lbl = "🎓  Capital Acumulado (Educar+)"
+                    lbl = "Capital Acumulado (Educar+)"
                 else:
-                    lbl = "🛡️  Resgate no Vencimento"
+                    lbl = "Resgate no Vencimento"
                 st.metric(lbl, formatar_brl(valor_vencimento),
                           f"+{ganho_real_pct:.1f}% real acumulado", delta_color="normal")
 
@@ -1235,7 +1233,7 @@ def render():
 
             # Gráfico do Paradoxo
             st.markdown("---")
-            st.markdown("#### 📈  O Gráfico do Paradoxo")
+            st.markdown("#### O Gráfico do Paradoxo")
             col_graf, col_leg = st.columns([3, 1])
 
             with st.spinner("Calculando série temporal..."):
@@ -1295,7 +1293,7 @@ As duas linhas **convergem no vencimento.**
     with tab_sim:
         # Stress Test — apenas para IPCA+ (usa pricing NTN-B)
         if not calc.get("is_simples"):
-            st.markdown("#### ⚡  Choque de Taxa — Adverso e Favorável")
+            st.markdown("#### Choque de Taxa — Adverso e Favorável")
             st.caption("O carrego permanece inalterado em ambos os cenários.")
 
             choque_stress = st.slider(
@@ -1364,7 +1362,7 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
         st.markdown("---")
 
         # Estou Pensando em Vender
-        st.markdown("#### 🤔  Estou Pensando em Vender — Qual o Custo Real?")
+        st.markdown("#### Estou Pensando em Vender — Qual o Custo Real?")
         cv1, cv2 = st.columns(2)
         with cv1:
             mam_input    = st.number_input("Resgate antecipado hoje (R$)", min_value=1.0,
@@ -1646,7 +1644,7 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
     # =========================== ABA 4: UTILITÁRIOS ==========================
     with tab_util:
         # Custódia B3
-        st.markdown("#### 🏦  Taxa de Custódia B3")
+        st.markdown("#### Taxa de Custódia B3")
         if _tipo_sel in ("cdb", "lci", "lca"):
             st.info("Taxa de custódia B3 aplica-se apenas a títulos do Tesouro Direto.", icon="ℹ️")
         else:
@@ -1677,7 +1675,7 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
         st.markdown("---")
 
         # Copiar análise
-        st.markdown("#### 📋  Copiar Resumo da Análise")
+        st.markdown("#### Copiar Resumo da Análise")
         _pos_score_label = "Sereno" if score >= 70 else "Atenção" if score >= 40 else "Risco de Pânico"
         posicao_str = "ACIMA" if resultado["mam"] >= valor_investido else "ABAIXO"
         _taxa_tipo = "real" if _tipo_sel == "ipca_mais" else "nominal"

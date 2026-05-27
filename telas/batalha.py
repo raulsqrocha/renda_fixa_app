@@ -30,7 +30,7 @@ def _analise_cached(nome, tipo, taxa, anos_total, anos_saida, ipca, choque, com_
                            com_ir=com_ir, selic=selic)
 
 
-_TIPO_EMOJI = {"selic": "💰", "pre": "📌", "ipca_mais": "🛡️"}
+
 _TIPO_NOME  = {
     "selic":     "Pós-Fixado (Selic)",
     "pre":       "Pré-Fixado",
@@ -181,9 +181,40 @@ def render():
     # -----------------------------------------------------------------------
     # Inputs — antes dos expanders para que o painel dinâmico use os valores
     # -----------------------------------------------------------------------
-    st.subheader("⚙️  Configure sua Situação")
+    st.subheader(":material/tune:  Configure sua Situação")
 
-    col_h, col_macro, col_sel = st.columns([1, 1.4, 1.6])
+    with st.expander("Premissas Macroeconômicas", expanded=False):
+        st.caption("Defaults calibrados para o cenário atual. Ajuste se quiser simular trajetórias diferentes.")
+        _mc1, _mc2, _mc3 = st.columns(3)
+        with _mc1:
+            ipca_pct = st.slider(
+                "IPCA Projetado (% a.a.)", 1.0, 15.0, 5.0, 0.1, format="%.1f%%",
+                key="bat_ipca",
+                help=(
+                    "Estimativa de inflação média anual ao longo do horizonte simulado.\n\n"
+                    "Não afeta o ganho real do IPCA+ (travado no contrato) — muda apenas o valor nominal."
+                ),
+            )
+        with _mc2:
+            selic_pct = st.slider(
+                "Selic Projetada (% a.a.)", 2.0, 25.0, 14.75, 0.25, format="%.2f%%",
+                key="bat_selic",
+                help=(
+                    "Estimativa da Selic média ao longo do horizonte simulado.\n\n"
+                    "Usada pelo Tesouro Selic e pela fase de reinvestimento quando um título vence antes do horizonte."
+                ),
+            )
+        with _mc3:
+            choque_pp = st.slider(
+                "Choque de Taxa (p.p.)", 0.25, 3.0, 1.0, 0.25, format="%.2f p.p.",
+                key="bat_choque",
+                help=(
+                    "Magnitude do choque aplicado nos cenários adverso (+) e favorável (−).\n\n"
+                    "O Tesouro Selic não sofre esse efeito por ser pós-fixado."
+                ),
+            )
+
+    col_h, col_sel = st.columns([1, 1.8])
 
     with col_h:
         st.markdown("**Quando precisa do dinheiro?**")
@@ -218,56 +249,6 @@ def render():
             horizontal=False,
             key="bat_perfil",
             label_visibility="collapsed",
-        )
-
-    with col_macro:
-        st.markdown("**Projeção Macroeconômica**")
-        ipca_pct  = st.slider(
-            "🌡️ IPCA Projetado (% a.a.)", 1.0, 15.0, 5.0, 0.1, format="%.1f%%",
-            key="bat_ipca",
-            help=(
-                "**O que é:** o IPCA é o índice oficial de inflação do Brasil, medido "
-                "mensalmente pelo IBGE. Representa o quanto os preços subiram no período.\n\n"
-                "**O que colocar aqui:** sua estimativa de inflação média por ano ao longo "
-                "de todo o período simulado — não a inflação de hoje, mas a *média* que você "
-                "projeta para os próximos anos.\n\n"
-                "**Exemplo:** se você acredita que nos próximos 5 anos o Brasil terá em média "
-                "5% de inflação ao ano, coloque 5,0.\n\n"
-                "**Dica:** esse número não afeta o ganho real do Tesouro IPCA+, que é travado "
-                "no contrato. Ele muda apenas o valor nominal final da simulação."
-            ),
-        )
-        selic_pct = st.slider(
-            "🏦 Selic Projetada (% a.a.)", 2.0, 25.0, 14.75, 0.25, format="%.2f%%",
-            key="bat_selic",
-            help=(
-                "**O que é:** a Selic é a taxa básica de juros do Brasil, definida pelo "
-                "Banco Central a cada 45 dias. O Tesouro Selic rende aproximadamente a Selic.\n\n"
-                "**O que colocar aqui:** sua estimativa da Selic média por ano ao longo de "
-                "todo o período simulado — não a Selic de hoje, mas a *média* que você projeta "
-                "para os próximos anos.\n\n"
-                "**Exemplo:** se a Selic está em 13,75% hoje mas você acredita que vai cair "
-                "gradualmente, coloque uma média mais baixa, como 11,0%.\n\n"
-                "**Por que importa:** o Tesouro Selic e a fase de reinvestimento (quando um "
-                "título vence antes do seu horizonte) usam esse valor para calcular o retorno."
-            ),
-        )
-        choque_pp = st.slider(
-            "⚡ Choque de Taxa (p.p.)", 0.25, 3.0, 1.0, 0.25, format="%.2f p.p.",
-            key="bat_choque",
-            help=(
-                "**O que é:** simula quanto as taxas de juros podem subir ou cair nos "
-                "cenários de estresse.\n\n"
-                "**Cenário Adverso:** taxas sobem esse valor. Quem precisar vender antes "
-                "do vencimento recebe menos — é a Marcação a Mercado (MaM) funcionando "
-                "contra o investidor.\n\n"
-                "**Cenário Favorável:** taxas caem esse valor. Quem vender antes do "
-                "vencimento recebe mais do que contratou.\n\n"
-                "**Exemplo com 1 p.p.:** se a taxa do título é 7%, o cenário adverso "
-                "simula 8% e o favorável simula 6%.\n\n"
-                "**Atenção:** o Tesouro Selic não sofre esse efeito — por ser pós-fixado, "
-                "não tem risco de variação de preço."
-            ),
         )
 
     with col_sel:
@@ -309,7 +290,7 @@ def render():
     educar_ex = next((t for t in catalogo if "Educar+" in t["nome"]), None)
 
     st.divider()
-    with st.expander("📚  Entenda como cada título se comporta no seu cenário", expanded=True):
+    with st.expander("Entenda como cada título se comporta no seu cenário", expanded=True):
         st.caption(
             f"Exemplos calculados para: IPCA {ipca_pct:.1f}% · Selic {selic_pct:.1f}% · "
             f"Horizonte {horizonte} ano(s) · {formatar_brl(capital)}"
@@ -321,7 +302,7 @@ def render():
         # ---- Selic ----
         with col_d1:
 
-            st.markdown("#### 💰 Tesouro Selic — Pós-Fixado")
+            st.markdown("#### Tesouro Selic — Pós-Fixado")
             vf_sl   = capital * (1 + sl) ** H
             vf_sl_l = capital * (1 + retorno_liquido_ir(sl, H)) ** H if com_ir else vf_sl
             real_sl = ((1 + sl) / (1 + ip)) ** H - 1
@@ -331,20 +312,21 @@ def render():
                 "Retorno estimado",
                 f"{selic_pct:.2f}% a.a.",
                 f"Real projetado: {real_sl*100:.1f}% acima do IPCA",
+                help=(
+                    "Pós-fixado: rende a Selic dia a dia, sem risco de MaM.\n\n"
+                    "Risco de reinvestimento: se a Selic cair, o rendimento cai junto — sem proteção de taxa.\n\n"
+                    "Use quando precisar de liquidez imediata ou não souber quando vai sacar."
+                ),
             )
-            st.markdown(f"""
-Com Selic em **{selic_pct:.1f}%**, {formatar_brl(capital)} viram **{formatar_brl(vf_sl_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
-
-✅ **Sem risco de MaM** — o preço sobe todos os dias, você pode sair a qualquer momento.
-
-⚠️ **Risco de reinvestimento:** se a Selic cair {choque_pp:.2f} p.p., o rendimento cai junto e {formatar_brl(capital)} viram **{formatar_brl(vf_adv)}** — não há proteção de taxa.
-
-**Use quando:** precisar de liquidez imediata ou não souber exatamente quando vai sacar.
-            """)
+            st.markdown(
+                f"{formatar_brl(capital)} → **{formatar_brl(vf_sl_l)}** em {horizonte} ano(s)"
+                f"{' (líquido IR)' if com_ir else ''} · "
+                f"adverso: **{formatar_brl(vf_adv)}**"
+            )
 
         # ---- Prefixado ----
         with col_d2:
-            st.markdown("#### 📌 Tesouro Prefixado — Pré-Fixado")
+            st.markdown("#### Tesouro Prefixado — Pré-Fixado")
             if pre_ex:
                 tp       = pre_ex["taxa"] / 100
                 T_pre    = pre_ex["anos_total"]
@@ -372,43 +354,35 @@ Com Selic em **{selic_pct:.1f}%**, {formatar_brl(capital)} viram **{formatar_brl
                     f"Taxa travada — {pre_ex['nome'].replace('Tesouro ', '')}",
                     f"{pre_ex['taxa']:.2f}% a.a.",
                     delta_str,
+                    help="Taxa nominal garantida no contrato. Use quando quiser travar uma taxa alta — tolerando reinvestir a Selic se o título vencer antes do horizonte, ou apostando na queda da Selic.",
                 )
 
                 if _reinvest_pre:
                     anos_rest_pre = H - T_pre
-                    st.markdown(f"""
-Taxa de **{pre_ex['taxa']:.1f}%** travada — título vence em **{T_pre:.1f} ano(s)**.
-
-**Retorno combinado em 2 fases:**
-- Fase 1 ({T_pre:.1f}a): Prefixado a {pre_ex['taxa']:.1f}% a.a.
-- Fase 2 ({anos_rest_pre:.1f}a): resgate reinvestido a Selic {selic_pct:.1f}%
-
-{formatar_brl(capital)} → **{formatar_brl(vf_pr_l)}** em {horizonte} ano(s){" (líquido IR em cada fase)" if com_ir else ""}.
-
-✅ **Sem risco de MaM** — título mantido até o vencimento.
-
-⚠️ Cenário adverso (Selic cai {choque_pp:.2f} p.p. na Fase 2): {formatar_brl(capital)} → **{formatar_brl(vf_adv_p)}**
-
-**Use quando:** quiser travar uma taxa alta e tolerar reinvestir o resgate a Selic.
-                    """)
+                    st.markdown(
+                        f"F1 ({T_pre:.1f}a): {pre_ex['taxa']:.1f}% a.a. · "
+                        f"F2 ({anos_rest_pre:.1f}a): Selic {selic_pct:.1f}%\n\n"
+                        f"{formatar_brl(capital)} → **{formatar_brl(vf_pr_l)}** em {horizonte} ano(s)"
+                        f"{' (líquido IR)' if com_ir else ''} · "
+                        f"adverso: **{formatar_brl(vf_adv_p)}**"
+                    )
                 else:
-                    st.markdown(f"""
-Taxa nominal de **{pre_ex['taxa']:.1f}%** travada na compra — independe do que a Selic fizer depois.
-
-{formatar_brl(capital)} → **{formatar_brl(vf_pr_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
-
-**Exposição MaM:** {expo_pre:.1f} ano(s) sobrando após sua saída → {_risco_expo("pre", expo_pre)}
-{"✅ Vence dentro do horizonte — sem risco de MaM." if expo_pre == 0 else
-f"⚠️ Se taxas subirem {choque_pp:.2f} p.p., {formatar_brl(capital)} → **{formatar_brl(vf_adv_p)}** ({r_adv_p*100:.1f}% a.a.)"}
-
-**Use quando:** quiser travar uma taxa alta acreditando que a Selic vai cair.
-                    """)
+                    _adv_pre = (
+                        "✅ Vence dentro do horizonte." if expo_pre == 0 else
+                        f"⚠️ Adverso (+{choque_pp:.2f} p.p.): **{formatar_brl(vf_adv_p)}** ({r_adv_p*100:.1f}% a.a.)"
+                    )
+                    st.markdown(
+                        f"{formatar_brl(capital)} → **{formatar_brl(vf_pr_l)}** em {horizonte} ano(s)"
+                        f"{' (líquido IR)' if com_ir else ''}\n\n"
+                        f"MaM: {expo_pre:.1f}a → {_risco_expo('pre', expo_pre)}\n\n"
+                        f"{_adv_pre}"
+                    )
             else:
                 st.info("Nenhum Prefixado disponível no catálogo.")
 
         # ---- IPCA+ ----
         with col_d3:
-            st.markdown("#### 🛡️ Tesouro IPCA+ — Híbrido")
+            st.markdown("#### Tesouro IPCA+ — Híbrido")
             if ipca_ex:
                 tr       = ipca_ex["taxa"] / 100
                 T_ip     = ipca_ex["anos_total"]
@@ -436,37 +410,29 @@ f"⚠️ Se taxas subirem {choque_pp:.2f} p.p., {formatar_brl(capital)} → **{f
                     f"Taxa real travada — {ipca_ex['nome'].replace('Tesouro ', '')}",
                     f"IPCA + {ipca_ex['taxa']:.2f}% a.a.",
                     delta_str_ip,
+                    help="Taxa real garantida no contrato, acima da inflação — qualquer que seja o IPCA futuro. Use quando quiser proteger o poder de compra no longo prazo.",
                 )
 
                 if _reinvest_ip:
                     anos_rest_ip = H - T_ip
-                    st.markdown(f"""
-**{ipca_ex['taxa']:.2f}% real** acima da inflação — vence em **{T_ip:.1f} ano(s)**.
-
-**Retorno combinado em 2 fases:**
-- Fase 1 ({T_ip:.1f}a): IPCA + {ipca_ex['taxa']:.2f}% a.a.
-- Fase 2 ({anos_rest_ip:.1f}a): resgate reinvestido a Selic {selic_pct:.1f}%
-
-{formatar_brl(capital)} → **{formatar_brl(vf_ip_l)}** em {horizonte} ano(s){" (líquido IR em cada fase)" if com_ir else ""}.
-
-✅ **Sem risco de MaM** — título mantido até o vencimento.
-
-⚠️ Cenário adverso (Selic cai {choque_pp:.2f} p.p. na Fase 2): {formatar_brl(capital)} → **{formatar_brl(vf_adv_ip)}**
-
-**Use quando:** quiser proteger o poder de compra e tolerar reinvestir o resgate a Selic.
-                    """)
+                    st.markdown(
+                        f"F1 ({T_ip:.1f}a): IPCA + {ipca_ex['taxa']:.2f}% · "
+                        f"F2 ({anos_rest_ip:.1f}a): Selic {selic_pct:.1f}%\n\n"
+                        f"{formatar_brl(capital)} → **{formatar_brl(vf_ip_l)}** em {horizonte} ano(s)"
+                        f"{' (líquido IR)' if com_ir else ''} · "
+                        f"adverso: **{formatar_brl(vf_adv_ip)}**"
+                    )
                 else:
-                    st.markdown(f"""
-**{ipca_ex['taxa']:.2f}% real** acima da inflação — garantido no contrato, qualquer que seja o IPCA.
-
-{formatar_brl(capital)} → **{formatar_brl(vf_ip_l)}** em {horizonte} ano(s){" (líquido IR)" if com_ir else ""}.
-
-**Exposição MaM:** {expo_ip:.1f} ano(s) sobrando após sua saída → {_risco_expo("ipca_mais", expo_ip)}
-{"✅ Vence dentro do horizonte — sem risco de MaM." if expo_ip == 0 else
-f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **{formatar_brl(vf_adv_ip)}** ({r_adv_ip*100:.1f}% a.a.)"}
-
-**Use quando:** quiser proteger o poder de compra no longo prazo ou se temer inflação alta.
-                    """)
+                    _adv_ip = (
+                        "✅ Vence dentro do horizonte." if expo_ip == 0 else
+                        f"⚠️ Adverso (+{choque_pp:.2f} p.p.): **{formatar_brl(vf_adv_ip)}** ({r_adv_ip*100:.1f}% a.a.)"
+                    )
+                    st.markdown(
+                        f"{formatar_brl(capital)} → **{formatar_brl(vf_ip_l)}** em {horizonte} ano(s)"
+                        f"{' (líquido IR)' if com_ir else ''}\n\n"
+                        f"MaM: {expo_ip:.1f}a → {_risco_expo('ipca_mais', expo_ip)}\n\n"
+                        f"{_adv_ip}"
+                    )
             else:
                 st.info("Nenhum IPCA+ disponível no catálogo.")
 
@@ -475,7 +441,7 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
         col_d4, col_d5 = st.columns(2)
 
         with col_d4:
-            st.markdown("#### 🏦 Tesouro RendA+ — Aposentadoria Extra")
+            st.markdown("#### Tesouro RendA+ — Aposentadoria Extra")
             if renda_ex:
                 tr_r    = renda_ex["taxa"] / 100
                 T_r     = renda_ex["anos_total"]
@@ -487,31 +453,25 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
                     f"Taxa real — {renda_ex['nome'].replace('Tesouro ', '')}",
                     f"IPCA + {renda_ex['taxa']:.2f}% a.a.",
                     f"Nominal: ~{nom_r*100:.1f}% com IPCA {ipca_pct:.1f}%",
+                    help=(
+                        "Acumulação até o vencimento: cresce a IPCA + taxa, igual a um IPCA+ convencional.\n\n"
+                        "Após o vencimento: pagamento mensal vitalício proporcional ao capital acumulado.\n\n"
+                        "Uso avançado: por ter o prazo mais longo do mercado (até 2065), é o título mais "
+                        "sensível a variações de taxa — queda de 1 p.p. gera ganho expressivo via MaM.\n\n"
+                        "Use quando: quiser transformar patrimônio em renda vitalícia corrigida pela inflação."
+                    ),
                 )
-                st.markdown(f"""
-**Fase de acumulação** até {renda_ex['vencimento'].strftime('%d/%m/%Y')}: seu capital cresce a IPCA + {renda_ex['taxa']:.2f}% a.a. — igual a um IPCA+ convencional.
-
-**Fase de renda (após vencimento):** o Tesouro paga **mensalmente** enquanto você viver, como uma renda vitalícia. O valor mensal é proporcional ao capital acumulado.
-
-{formatar_brl(capital)} acumulados até a saída: **{formatar_brl(vf_r_l)}**{" (aprox., com IR)" if com_ir else ""}.
-
-**Exposição MaM:** {expo_r:.1f} ano(s) sobrando após seu horizonte → {_risco_expo("ipca_mais", expo_r)}
-
-⚠️ **Liquidez restrita na fase de renda** — o título não pode ser vendido após iniciada a renda. Planeje como investimento de longo prazo.
-
-⚠️ **IR na fase de renda:** incide sobre cada parcela mensal recebida (alíquota regressiva aplicada individualmente).
-
-**Use quando:** quiser transformar patrimônio em renda vitalícia corrigida pela inflação.
-
----
-
-📈 **Uso avançado — ganho de MaM:** o RendA+ é o título com o **vencimento mais longo do mercado** (até 2065). Quanto maior o prazo, maior a sensibilidade do preço às variações de taxa — ou seja, uma queda de 1 p.p. na taxa de juros gera um ganho de capital muito maior no RendA+ 2065 do que num IPCA+ 2032. Por isso, investidores que acreditam em queda de juros costumam usar o RendA+ especificamente para capturar essa valorização antecipada via resgate antes do vencimento, e não necessariamente para usufruir da renda vitalícia.
-                """)
+                st.markdown(
+                    f"{formatar_brl(capital)} → **{formatar_brl(vf_r_l)}** até {renda_ex['vencimento'].strftime('%d/%m/%Y')}"
+                    f"{' (aprox., com IR)' if com_ir else ''}\n\n"
+                    f"MaM: {expo_r:.1f}a → {_risco_expo('ipca_mais', expo_r)}\n\n"
+                    "⚠️ Liquidez restrita após início da renda · IR em cada parcela mensal"
+                )
             else:
                 st.info("Nenhum RendA+ disponível no catálogo.")
 
         with col_d5:
-            st.markdown("#### 🎓 Tesouro Educar+ — Educação dos Filhos")
+            st.markdown("#### Tesouro Educar+ — Educação dos Filhos")
             if educar_ex:
                 tr_e    = educar_ex["taxa"] / 100
                 T_e     = educar_ex["anos_total"]
@@ -523,22 +483,19 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
                     f"Taxa real — {educar_ex['nome'].replace('Tesouro ', '')}",
                     f"IPCA + {educar_ex['taxa']:.2f}% a.a.",
                     f"Nominal: ~{nom_e*100:.1f}% com IPCA {ipca_pct:.1f}%",
+                    help=(
+                        "Acumulação até o vencimento: cresce a IPCA + taxa, igual a um IPCA+ convencional.\n\n"
+                        "Após o vencimento: 60 parcelas mensais (5 anos), ideal para mensalidades universitárias.\n\n"
+                        "Liquidez restrita após início dos pagamentos — sem resgate antecipado do saldo.\n\n"
+                        "Use quando: quiser financiar os estudos dos filhos com proteção contra inflação e taxa garantida."
+                    ),
                 )
-                st.markdown(f"""
-**Fase de acumulação** até {educar_ex['vencimento'].strftime('%d/%m/%Y')}: funciona como um IPCA+ — capital cresce a IPCA + {educar_ex['taxa']:.2f}% a.a.
-
-**Fase de pagamento (após vencimento):** o Tesouro paga **mensalmente por 5 anos**, ideal para cobrir mensalidades universitárias. O resgate se divide em 60 parcelas iguais corrigidas.
-
-{formatar_brl(capital)} acumulados até a saída: **{formatar_brl(vf_e_l)}**{" (aprox., com IR)" if com_ir else ""}.
-
-**Exposição MaM:** {expo_e:.1f} ano(s) sobrando após seu horizonte → {_risco_expo("ipca_mais", expo_e)}
-
-⚠️ **Liquidez restrita na fase de pagamento** — após iniciado o recebimento, não é possível resgatar o saldo antecipadamente.
-
-⚠️ **IR em cada parcela:** cada mensalidade tem alíquota regressiva calculada individualmente sobre o lucro embutido.
-
-**Use quando:** quiser financiar os estudos dos filhos com proteção contra inflação e taxa garantida.
-                """)
+                st.markdown(
+                    f"{formatar_brl(capital)} → **{formatar_brl(vf_e_l)}** até {educar_ex['vencimento'].strftime('%d/%m/%Y')}"
+                    f"{' (aprox., com IR)' if com_ir else ''}\n\n"
+                    f"MaM: {expo_e:.1f}a → {_risco_expo('ipca_mais', expo_e)}\n\n"
+                    "⚠️ Liquidez restrita após início dos pagamentos · IR em cada parcela"
+                )
             else:
                 st.info("Nenhum Educar+ disponível no catálogo.")
 
@@ -654,7 +611,7 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
     # Semáforo de Risco
     # -----------------------------------------------------------------------
     ir_label = " (líquido de IR)" if com_ir else ""
-    st.subheader(f"📊  Análise para Horizonte de {horizonte} Ano(s){ir_label}")
+    st.subheader(f":material/bar_chart:  Análise para Horizonte de {horizonte} Ano(s){ir_label}")
 
     cols = st.columns(min(len(analises), 6))
     for col, a in zip(cols, analises):
@@ -662,7 +619,7 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
         venc_date  = next(t["vencimento"].strftime("%d/%m/%Y") for t in titulos_sel if t["nome"] == a["nome"])
         with col:
             st.metric(
-                label=f"{_TIPO_EMOJI[a['tipo']]}  {nome_curto}{' 🏆' if a['nome'] == vencedor['nome'] else ''}",
+                label=f"{nome_curto}{' 🏆' if a['nome'] == vencedor['nome'] else ''}",
                 value=f"{a['ret_neu']:.2f}% a.a.",
                 delta=a["risco_label"],
                 delta_color="off",
@@ -706,7 +663,7 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
     # Análise por Horizonte
     # -----------------------------------------------------------------------
     st.divider()
-    st.subheader("📈  Qual Título Performa Melhor em Cada Horizonte?")
+    st.subheader(":material/trending_up:  Qual Título Performa Melhor em Cada Horizonte?")
     st.caption(
         "Retorno neutro esperado para cada título em diferentes horizontes de saída. "
         "A banda sombreada mostra o intervalo entre o cenário adverso e favorável."
@@ -740,7 +697,7 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
     # -----------------------------------------------------------------------
     # Recomendação
     # -----------------------------------------------------------------------
-    st.subheader("🎯  Recomendação")
+    st.subheader(":material/flag:  Recomendação")
     st.caption(
         f"Critério ativo: {_PERFIL_EMOJI[perfil]} **{perfil}** — "
         + ("minimiza risco de MaM" if perfil == "Conservador"
@@ -756,7 +713,7 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
     # Carteira Mista Otimizada (3.2)
     # -----------------------------------------------------------------------
     if mix:
-        st.markdown("#### ⭐  Carteira Mista Otimizada — Asset Allocation de Renda Fixa")
+        st.markdown("#### Carteira Mista Otimizada — Asset Allocation de Renda Fixa")
 
         nome_p = mix["nome_principal"].replace("Tesouro ", "")
         nome_l = mix["nome_liquida"].replace("Tesouro ", "")
@@ -801,7 +758,7 @@ f"⚠️ Se taxa real subir {choque_pp:.2f} p.p., {formatar_brl(capital)} → **
     # -----------------------------------------------------------------------
     # Tabela Comparativa
     # -----------------------------------------------------------------------
-    st.subheader("📋  Detalhamento Completo")
+    st.subheader(":material/table_rows:  Detalhamento Completo")
 
     linhas = []
     for a in analises:
