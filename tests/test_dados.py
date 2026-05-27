@@ -638,3 +638,9 @@ class TestIntegridadeConfigs:
             if cfg["vencimento"] < _date(2026, 1, 1)
         ]
         assert expirados == [], f"Títulos expirados em TITULOS_CONFIG: {expirados}"
+
+    def test_taxas_ref_sem_titulo_config_correspondente(self):
+        # Entradas em _TAXAS_REF sem correspondente em TITULOS_CONFIG são órfãs —
+        # nunca serão usadas e indicam inconsistência ao remover/renomear um título.
+        orfaos = [nome for nome in _TAXAS_REF if nome not in TITULOS_CONFIG]
+        assert orfaos == [], f"Entradas órfãs em _TAXAS_REF: {orfaos}"

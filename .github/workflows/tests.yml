@@ -31,4 +31,4 @@ jobs:
         run: mypy core/ --ignore-missing-imports --no-error-summary
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short --cov=core --cov-report=term-missing --cov-fail-under=48
+        run: pytest tests/ -v --tb=short --cov=core --cov-report=term-missing --cov-fail-under=65
