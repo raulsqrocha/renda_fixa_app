@@ -19,6 +19,7 @@ from core.dados import (
     calcular_vna_via_bcb,
     chave_cache_mercado,
     montar_catalogo_batalha,
+    TITULOS_BATALHA,
     TITULOS_CONFIG,
     timestamp_ultima_atualizacao,
 )
@@ -644,3 +645,14 @@ class TestIntegridadeConfigs:
         # nunca serão usadas e indicam inconsistência ao remover/renomear um título.
         orfaos = [nome for nome in _TAXAS_REF if nome not in TITULOS_CONFIG]
         assert orfaos == [], f"Entradas órfãs em _TAXAS_REF: {orfaos}"
+
+    def test_titulos_config_em_titulos_batalha_como_ipca_mais(self):
+        # Todo título em TITULOS_CONFIG deve aparecer em TITULOS_BATALHA com tipo "ipca_mais".
+        # TITULOS_BATALHA é derivado via dict unpacking de TITULOS_CONFIG — este teste
+        # detectaria uma refatoração que quebre essa derivação.
+        erros = [
+            nome for nome in TITULOS_CONFIG
+            if nome not in TITULOS_BATALHA
+            or TITULOS_BATALHA[nome].get("tipo") != "ipca_mais"
+        ]
+        assert erros == [], f"Títulos fora de TITULOS_BATALHA ou tipo errado: {erros}"
