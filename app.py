@@ -14,7 +14,7 @@ from core.estilos import aplicar_estilo_global
 
 st.set_page_config(
     page_title="Renda Fixa | Marcação a Mercado",
-    page_icon="📊",
+    page_icon=":material/analytics:",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -22,10 +22,10 @@ st.set_page_config(
 aplicar_estilo_global()
 
 pg = st.navigation([
-    st.Page("pages/0_Dashboard.py",          title="💼  Minha Carteira",            default=True),
-    st.Page("pages/1_Qual_Ativo.py",         title="🎯  Qual Ativo Escolher?"),
-    st.Page("pages/2_Comparar_Produtos.py",  title="📊  Comparar Produtos"),
-    st.Page("pages/3_Simulador_MaM.py",      title="🔬  Simulador Avançado (MaM)"),
+    st.Page("pages/0_Dashboard.py",          title="Minha Carteira",            icon=":material/account_balance_wallet:", default=True),
+    st.Page("pages/1_Qual_Ativo.py",         title="Qual Ativo Escolher?",      icon=":material/help:"),
+    st.Page("pages/2_Comparar_Produtos.py",  title="Comparar Produtos",         icon=":material/bar_chart:"),
+    st.Page("pages/3_Simulador_MaM.py",      title="Simulador Avançado (MaM)",  icon=":material/show_chart:"),
 ])
 
 pg.run()

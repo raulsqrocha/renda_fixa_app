@@ -100,7 +100,7 @@ def render():
     # -----------------------------------------------------------------------
     # Seletor duplo: Categoria → Título
     # -----------------------------------------------------------------------
-    st.subheader("🎯  Selecione o Título")
+    st.subheader(":material/search:  Selecione o Título")
 
     # Linha 1 — Seleção do título (inputs categóricos)
     col_cat, col_venc = st.columns([1, 2])
@@ -156,42 +156,28 @@ def render():
     # -----------------------------------------------------------------------
     # 1. Simulador de Cenários de Inflação
     # -----------------------------------------------------------------------
-    st.subheader("🌡️  Simulador de Cenários de Inflação")
+    st.subheader(":material/thermostat:  Simulador de Cenários de Inflação")
 
     col_s1, col_s2 = st.columns([1, 1])
 
     with col_s1:
-        st.markdown(
-            "Ajuste os sliders para projetar diferentes trajetórias do IPCA "
-            "e veja o impacto no valor final do seu investimento."
-        )
-        st.markdown("")
-
         ipca_baixo = st.slider(
-            "📉  Inflação Baixa (IPCA % a.a.)",
+            "Inflação Baixa (IPCA % a.a.)",
             min_value=1.0, max_value=5.0, value=3.0, step=0.1, format="%.1f%%",
             help="Cenário otimista — inflação próxima ou abaixo da meta do BCB",
             key="sim_ipca_baixo",
         )
         ipca_base = st.slider(
-            "📊  Cenário Base (IPCA % a.a.)",
+            "Cenário Base (IPCA % a.a.)",
             min_value=3.0, max_value=8.0, value=4.5, step=0.1, format="%.1f%%",
             help="Cenário mais provável conforme expectativas do mercado (Focus/BCB)",
             key="sim_ipca_base",
         )
         ipca_estresse = st.slider(
-            "🔥  Estresse / Hiperinflação (IPCA % a.a.)",
+            "Estresse / Hiperinflação (IPCA % a.a.)",
             min_value=6.0, max_value=20.0, value=9.0, step=0.5, format="%.1f%%",
             help="Cenário adverso — similar a 2015 ou crises de supply chain",
             key="sim_ipca_estresse",
-        )
-
-        st.info(
-            "**Insight comportamental:** note que o ganho real acumulado "
-            f"(**{((1 + taxa_atual_pct/100)**anos_restantes - 1)*100:.1f}%**) "
-            "é idêntico nos três cenários. A taxa real do IPCA+ é travada — "
-            "o IPCA afeta apenas o valor nominal, não o seu poder de compra.",
-            icon="💡",
         )
 
     with col_s2:
@@ -239,9 +225,9 @@ def render():
     # -----------------------------------------------------------------------
     # 2. Simulador de MaM — Venda Antecipada
     # -----------------------------------------------------------------------
-    st.subheader("📉  Simulador de MaM — Estratégia de Venda Antecipada")
+    st.subheader(":material/show_chart:  Simulador de MaM — Estratégia de Venda Antecipada")
 
-    with st.expander("📖  Como funciona a estratégia de MaM?", expanded=False):
+    with st.expander("Como funciona a estratégia de MaM?", expanded=False):
         col_exp1, col_exp2 = st.columns([3, 2])
         with col_exp1:
             st.markdown("""
@@ -357,7 +343,7 @@ que a taxa real mudou.
                 icon="ℹ️",
             )
 
-        with st.expander("🛠️  Configurar cenários macroeconômicos", expanded=True):
+        with st.expander("Configurar cenários macroeconômicos", expanded=False):
             st.caption(
                 "Edite o IPCA projetado (contexto) e a taxa real de saída para cada cenário. "
                 "Recolha este painel após configurar — os resultados abaixo atualizam automaticamente."
@@ -476,13 +462,13 @@ que a taxa real mudou.
                 st.caption("📐 Ajuste de curva aplicado: " + " · ".join(_adj_parts))
 
     st.divider()
-    st.subheader("📚  Referência de Mercado")
+    st.subheader(":material/menu_book:  Referência de Mercado")
     st.caption("Dados de contexto para calibrar suas simulações. Não são gerados automaticamente — insira manualmente ou consulte sua corretora.")
 
-    _aba_di, _aba_ipca = st.tabs(["📐  DI Futuro — Curva de Juros", "📜  Retrospecto Histórico IPCA"])
+    _aba_di, _aba_ipca = st.tabs(["DI Futuro — Curva de Juros", "Retrospecto Histórico IPCA"])
 
     with _aba_di:
-        with st.expander("📖  O que é o DI Futuro e por que ele importa?", expanded=True):
+        with st.expander("O que é o DI Futuro e por que ele importa?", expanded=True):
             col_exp1, col_exp2 = st.columns([3, 2])
 
             with col_exp1:
@@ -555,7 +541,7 @@ no futuro — cenário positivo para quem detém títulos longos.
     # -----------------------------------------------------------------------
     # 4. Retrospecto Histórico — IPCA
     # -----------------------------------------------------------------------
-        st.subheader("📜  Retrospecto Histórico — IPCA no Brasil")
+        st.subheader(":material/history:  Retrospecto Histórico — IPCA no Brasil")
 
         col_h1, col_h2 = st.columns([3, 2])
 
@@ -594,7 +580,7 @@ gradual que se estendeu até 2023.
 seu poder de compra em **todos** esses cenários — é exatamente para isso que ele existe.
             """)
 
-        with st.expander("📋  Ver série completa do IPCA (mensal)", expanded=False):
+        with st.expander("Ver série completa do IPCA (mensal)", expanded=False):
             df_display = df_ipca.copy()
             df_display["Mês/Ano"] = df_display["data"].dt.strftime("%b/%Y")
             df_display["IPCA (%)"] = df_display["valor"].map(lambda v: f"{v:.2f}%")
@@ -607,7 +593,7 @@ seu poder de compra em **todos** esses cenários — é exatamente para isso que
             st.caption("Fonte: Banco Central do Brasil — SGS Série 433 (IPCA mensal).")
 
         st.divider()
-        st.markdown("#### 💹  E se você tivesse investido?")
+        st.markdown("#### E se você tivesse investido?")
         st.caption(
             "Simulação retroativa usando o IPCA real mês a mês. "
             "As taxas do Pré-Fixado e Selic são inseridas como médias planas — simplificação educacional."
