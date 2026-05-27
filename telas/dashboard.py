@@ -1284,6 +1284,12 @@ As duas linhas **convergem no vencimento.**
                 f"**Taxa mercado:** {taxa_mercado_pct:.2f}% a.a.  ·  "
                 f"**Qtd:** {resultado['quantidade']:.4f} títulos",
             )
+            st.caption(
+                "ℹ️ O VNA (Valor Nominal Atualizado) é corrigido pelo IPCA oficial do mês já fechado, "
+                "divulgado pelo IBGE com defasagem de cerca de 15 dias. Por isso, pequenas variações "
+                "centesimais entre o PU exibido aqui e o do seu home broker são normais — cada "
+                "plataforma pode aplicar o IPCA do mês corrente de forma diferente (projeção vs. dado oficial)."
+            )
 
     # =========================== ABA 2: SIMULAÇÕES ===========================
     with tab_sim:
