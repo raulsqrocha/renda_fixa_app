@@ -275,10 +275,16 @@ def grafico_ipca_historico(df_ipca: pd.DataFrame) -> go.Figure:
         .apply(lambda x: (np.prod(1 + x / 100) - 1) * 100)
         .reset_index(name="ipca_anual")
     )
+    n_meses = df.groupby("ano")["valor"].count().rename("n_meses")
+    df_anual = df_anual.join(n_meses, on="ano")
 
     cores = [
         VERMELHO if v >= 8 else LARANJA if v >= 5 else VERDE
         for v in df_anual["ipca_anual"]
+    ]
+    textos = [
+        f"{v:.1f}%*" if n < 12 else f"{v:.1f}%"
+        for v, n in zip(df_anual["ipca_anual"], df_anual["n_meses"])
     ]
 
     fig = go.Figure()
@@ -286,12 +292,28 @@ def grafico_ipca_historico(df_ipca: pd.DataFrame) -> go.Figure:
         x=df_anual["ano"],
         y=df_anual["ipca_anual"],
         marker_color=cores,
-        text=[f"{v:.1f}%" for v in df_anual["ipca_anual"]],
+        text=textos,
         textposition="outside",
         textfont=dict(size=10),
         hovertemplate="<b>%{x}</b><br>IPCA: %{y:.2f}%<extra></extra>",
         name="IPCA Acumulado",
     ))
+
+    anos_parciais = df_anual[df_anual["n_meses"] < 12]
+    if not anos_parciais.empty:
+        row = anos_parciais.iloc[-1]
+        meses_nomes = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+                       "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+        n = int(row["n_meses"])
+        ate_mes = meses_nomes[n - 1] if n <= 12 else "Dez"
+        fig.add_annotation(
+            x=0.01, y=0.01,
+            xref="paper", yref="paper",
+            text=f"* Acumulado Jan–{ate_mes}/{int(row['ano'])} (parcial)",
+            font=dict(size=9, color=TEXTO_FRACO),
+            showarrow=False,
+            align="left",
+        )
 
     # Meta do Banco Central (3,0% para 2025 em diante)
     fig.add_hline(
@@ -303,7 +325,7 @@ def grafico_ipca_historico(df_ipca: pd.DataFrame) -> go.Figure:
     )
 
     # Marcos históricos
-    marcos = {2015: "Crise fiscal\n(10,67%)", 2021: "Ressurgência\npós-pandemia"}
+    marcos = {2015: "Crise fiscal<br>(10,67%)", 2021: "Ressurgência<br>pós-pandemia"}
     for ano, texto in marcos.items():
         linha = df_anual[df_anual["ano"] == ano]
         if not linha.empty:

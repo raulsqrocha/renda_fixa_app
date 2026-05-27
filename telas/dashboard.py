@@ -412,15 +412,15 @@ def render():
             "LCA":                        "lca",
         }
         _DEFAULTS_TAXA = {
-            "IPCA+ Principal":            5.50,
-            "IPCA+ com Juros Semestrais": 5.50,
-            "Tesouro RendA+":             5.50,
-            "Tesouro Educar+":            5.50,
+            "IPCA+ Principal":            7.50,
+            "IPCA+ com Juros Semestrais": 7.50,
+            "Tesouro RendA+":             7.50,
+            "Tesouro Educar+":            7.50,
             "Tesouro Selic":             14.75,
             "Tesouro Prefixado":         14.50,
-            "CDB":                       12.50,
-            "LCI":                       11.00,
-            "LCA":                       10.80,
+            "CDB":                       14.00,
+            "LCI":                       11.50,
+            "LCA":                       11.20,
         }
         _TAXA_LABELS = {
             "ipca_mais": "Taxa Real (% a.a.) — spread IPCA+",
@@ -1043,23 +1043,27 @@ def render():
                     icon="ℹ️",
                 )
 
+            _pos_max_simples = 25 if _tipo_sel == "pre" else 40
             col_sg, col_sc = st.columns([2.5, 1])
             with col_sg:
                 st.markdown("---")
                 st.markdown("#### 📊  Projeção de Crescimento")
-                # Gera pontos mensais do hoje até o vencimento
+                # Projeção a partir do valor acumulado hoje (mam) até o vencimento.
+                # Usar valor_investido como base deixaria o gráfico inconsistente com
+                # a métrica "No Vencimento" para posições mantidas há algum tempo.
+                _mam_sim   = resultado["mam"]
                 _d, _meses_x, _meses_y = date.today(), [], []
                 while _d < data_vencimento:
                     _dias = (_d - date.today()).days
                     _meses_x.append(_d.strftime("%b/%Y"))
-                    _meses_y.append(valor_investido * (1 + taxa_contratada) ** (_dias / 365))
+                    _meses_y.append(_mam_sim * (1 + taxa_contratada) ** (_dias / 365))
                     _nm = _d.month % 12 + 1
                     _ny = _d.year + (_d.month // 12)
                     _d  = date(_ny, _nm, min(_d.day, _cal.monthrange(_ny, _nm)[1]))
                 # Garante que o vencimento está incluído
                 _dias_venc = (data_vencimento - date.today()).days
                 _meses_x.append(data_vencimento.strftime("%b/%Y"))
-                _meses_y.append(valor_investido * (1 + taxa_contratada) ** (_dias_venc / 365))
+                _meses_y.append(_mam_sim * (1 + taxa_contratada) ** (_dias_venc / 365))
                 _cap_line  = [valor_investido] * len(_meses_x)
                 _y_pad     = (max(_meses_y) - valor_investido) * 0.15
                 fig_proj   = go.Figure()
@@ -1097,7 +1101,7 @@ def render():
                     help=(
                         f"**⏳ Prazo ({prazo_score:.0f}/60 pts):** quanto mais tempo restante, "
                         "mais fácil esperar.\n\n"
-                        f"**📊 Posição ({posicao_score:.0f}/40 pts)**\n\n"
+                        f"**📊 Posição ({posicao_score:.0f}/{_pos_max_simples} pts)**\n\n"
                         "**70–100 🟢 Saudável · 40–69 🟡 Atenção · 0–39 🔴 Risco**"
                     ),
                 )
@@ -1404,8 +1408,9 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
 
         # Cenário B: carrego bruto, depois desconta IR pelo prazo total desde a compra
         # Para IPCA+ multiplica pelo IPCA inserido pelo usuário; demais ativos já embutem inflação na taxa nominal
+        # Base = mam_input (igual a resultado["mam"] por padrão, mas segue ajuste do usuário no widget).
         _ipca_b       = (1 + ipca_cen_b / 100) if _tipo_sel == "ipca_mais" else 1.0
-        vf_bruto_b    = valor_investido * (1 + taxa_contratada) ** anos_venda * (_ipca_b ** anos_venda)
+        vf_bruto_b    = mam_input * (1 + taxa_contratada) ** anos_venda * (_ipca_b ** anos_venda)
         if ir_venda:
             dias_b        = (date.today() - data_compra).days + int(anos_venda * 365)
             aliq_ir_b     = aliquota_ir_renda_fixa(dias_b / 365)
@@ -1669,19 +1674,20 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
         st.markdown("#### 📋  Copiar Resumo da Análise")
         _pos_score_label = "Sereno" if score >= 70 else "Atenção" if score >= 40 else "Risco de Pânico"
         posicao_str = "ACIMA" if resultado["mam"] >= valor_investido else "ABAIXO"
+        _taxa_tipo = "real" if _tipo_sel == "ipca_mais" else "nominal"
         resumo = (
             f"📊 RESUMO DA POSIÇÃO — Renda Fixa CF\n"
             f"{'─' * 40}\n"
             f"Título: {titulo_sel}\n"
             f"Capital investido: {formatar_brl(valor_investido)}\n"
-            f"Taxa contratada: {taxa_contratada_pct:.2f}% a.a. real\n"
+            f"Taxa contratada: {taxa_contratada_pct:.2f}% a.a. {_taxa_tipo}\n"
             f"Data de compra: {data_compra.strftime('%d/%m/%Y')}\n"
             f"Vencimento: {data_vencimento.strftime('%d/%m/%Y')} ({anos_restantes} ano(s))\n"
             f"{'─' * 40}\n"
             f"MaM hoje: {formatar_brl(resultado['mam'])} ({posicao_str} do capital)\n"
             f"Se vender hoje: {formatar_brl(resultado['mam'])}\n"
             f"Se aguardar vencimento: {formatar_brl(valor_vencimento)}\n"
-            f"Taxa de mercado atual: {taxa_mercado_pct:.2f}% a.a. real\n"
+            f"Taxa de mercado atual: {taxa_mercado_pct:.2f}% a.a. {_taxa_tipo}\n"
             f"{'─' * 40}\n"
             f"Saúde da Posição: {score:.0f}/100 — {_pos_score_label}\n"
             f"  • Prazo: {prazo_score:.0f}/60 pts | Posição: {posicao_score:.0f}/40 pts\n"
