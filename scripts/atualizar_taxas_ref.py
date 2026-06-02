@@ -38,6 +38,7 @@ DADOS_PY = os.path.join(_ROOT, "core", "dados.py")
 # 1. Busca as taxas atuais
 # ---------------------------------------------------------------------------
 
+
 def buscar_taxas_atuais() -> dict[str, float]:
     print("Buscando CSV do Tesouro Transparente...")
     resp = requests.get(URL_TESOURO_CSV, timeout=30)
@@ -80,6 +81,7 @@ def buscar_taxas_atuais() -> dict[str, float]:
 # 2. Completa títulos ausentes no CSV com os valores atuais do código
 # ---------------------------------------------------------------------------
 
+
 def completar_com_existentes(taxas_novas: dict, conteudo_py: str) -> dict:
     """Para títulos não encontrados no CSV (ex: RendA+, Educar+), mantém o valor atual."""
     m = re.search(r"_TAXAS_REF:\s*dict\s*=\s*\{(.+?)\}", conteudo_py, re.DOTALL)
@@ -101,15 +103,25 @@ def completar_com_existentes(taxas_novas: dict, conteudo_py: str) -> dict:
 # 3. Gera o novo bloco _TAXAS_REF
 # ---------------------------------------------------------------------------
 
+
 def gerar_bloco(taxas: dict[str, float], data_ref: str) -> str:
-    linhas = [f"# Taxas de referência para o fallback — extraídas do Tesouro Transparente em {data_ref}"]
+    linhas = [
+        f"# Taxas de referência para o fallback — extraídas do Tesouro Transparente em {data_ref}"
+    ]
     linhas.append("_TAXAS_REF: dict = {")
 
     grupos = [
-        ("IPCA+ Principal",            [k for k in taxas if k.startswith("Tesouro IPCA+") and "Semestrais" not in k]),
-        ("IPCA+ Juros Semestrais",      [k for k in taxas if "Semestrais" in k]),
-        ("Renda+ Aposentadoria Extra",  [k for k in taxas if "RendA+" in k]),
-        ("Educar+",                     [k for k in taxas if "Educar+" in k]),
+        (
+            "IPCA+ Principal",
+            [
+                k
+                for k in taxas
+                if k.startswith("Tesouro IPCA+") and "Semestrais" not in k
+            ],
+        ),
+        ("IPCA+ Juros Semestrais", [k for k in taxas if "Semestrais" in k]),
+        ("Renda+ Aposentadoria Extra", [k for k in taxas if "RendA+" in k]),
+        ("Educar+", [k for k in taxas if "Educar+" in k]),
     ]
 
     for label, chaves in grupos:
@@ -154,6 +166,7 @@ def aplicar_patch(novo_bloco: str) -> bool:
 # ---------------------------------------------------------------------------
 # 5. Diff resumido
 # ---------------------------------------------------------------------------
+
 
 def mostrar_diff(taxas_antigas: dict, taxas_novas: dict) -> None:
     print("\n--- Variações em relação ao fallback anterior ---")

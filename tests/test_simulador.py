@@ -7,11 +7,12 @@ from telas.simulador import _cor_retorno
 # _cor_retorno
 # ---------------------------------------------------------------------------
 
+
 class TestCorRetorno:
     def test_negativo_retorna_vermelho(self):
         css = _cor_retorno("-5.3%")
-        assert "#2d1515" in css   # fundo vermelho escuro
-        assert "#fc8181" in css   # texto vermelho claro
+        assert "#2d1515" in css  # fundo vermelho escuro
+        assert "#fc8181" in css  # texto vermelho claro
 
     def test_zero_retorna_amarelo(self):
         # 0 < 30 → amarelo
@@ -38,7 +39,7 @@ class TestCorRetorno:
     def test_string_com_sinal_mais_parseada(self):
         # O '+' é removido antes do parse
         css = _cor_retorno("+25.5%")
-        assert "#2d2a10" in css   # 25.5 < 30 → amarelo
+        assert "#2d2a10" in css  # 25.5 < 30 → amarelo
 
     def test_string_invalida_retorna_vazio(self):
         # Valor não-numérico → except → ""
@@ -47,4 +48,4 @@ class TestCorRetorno:
     def test_virgula_como_separador_decimal(self):
         # A função substitui ',' → '.' antes de converter → "50,5%" vira 50.5 → verde
         css = _cor_retorno("50,5%")
-        assert "#15291a" in css   # 50.5 < 100 → verde
+        assert "#15291a" in css  # 50.5 < 100 → verde

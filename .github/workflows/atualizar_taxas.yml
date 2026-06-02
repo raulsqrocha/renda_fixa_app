@@ -1,0 +1,55 @@
+name: Atualizar Taxas de Referência
+
+on:
+  schedule:
+    - cron: "0 17 * * 1"  # Toda segunda-feira às 17h UTC (14h BRT) — após fechamento do TD às 13h
+  workflow_dispatch:       # Permite disparo manual pela aba Actions
+
+jobs:
+  atualizar-taxas:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Atualizar _TAXAS_REF
+        run: python scripts/atualizar_taxas_ref.py
+
+      - name: Verificar alterações
+        id: changes
+        run: |
+          if git diff --quiet core/dados.py; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "Nenhuma variação relevante — PR não criado."
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Taxas alteradas:"
+            git diff core/dados.py
+          fi
+
+      - name: Criar Pull Request
+        if: steps.changes.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "dados: atualizar _TAXAS_REF com taxas do dia"
+          branch: auto/atualizar-taxas-ref
+          delete-branch: true
+          title: "Atualizar taxas de referência do Tesouro Direto"
+          body: |
+            Taxas de referência atualizadas automaticamente a partir do CSV do Tesouro Transparente.
+
+            Revisar o diff em `core/dados.py` antes de fazer merge — qualquer variação acima de 0,01 p.p. é mostrada pelo script.
+          labels: automated

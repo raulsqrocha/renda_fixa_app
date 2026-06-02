@@ -11,25 +11,27 @@ import numpy as np
 
 
 class PortfolioAleatorio(TypedDict):
-    ret_adv:   float
-    ret_neu:   float
-    ret_fav:   float
+    ret_adv: float
+    ret_neu: float
+    ret_fav: float
     risco_std: float
 
 
 class CarteiraMistaResult(TypedDict):
-    ret_adv:        float
-    ret_neu:        float
-    ret_fav:        float
-    risco_std:      float
+    ret_adv: float
+    ret_neu: float
+    ret_fav: float
+    risco_std: float
     peso_principal: float
-    peso_liquida:   float
+    peso_liquida: float
     nome_principal: str
-    nome_liquida:   str
+    nome_liquida: str
     tipo_principal: str
 
 
-def gerar_portfolios_aleatorios(analises: list, n: int = 400, seed: int = 42) -> list[PortfolioAleatorio]:
+def gerar_portfolios_aleatorios(
+    analises: list, n: int = 400, seed: int = 42
+) -> list[PortfolioAleatorio]:
     """
     Gera n portfólios aleatórios via amostragem Dirichlet (Monte Carlo).
     Usado para plotar a nuvem de pontos da fronteira eficiente de Markowitz.
@@ -43,16 +45,18 @@ def gerar_portfolios_aleatorios(analises: list, n: int = 400, seed: int = 42) ->
     fav = np.array([a["ret_fav"] for a in analises])
     out: list[PortfolioAleatorio] = []
     for _ in range(n):
-        w     = rng.dirichlet(np.ones(k))
+        w = rng.dirichlet(np.ones(k))
         r_adv = float(w @ adv)
         r_neu = float(w @ neu)
         r_fav = float(w @ fav)
-        out.append(PortfolioAleatorio(
-            ret_adv=r_adv,
-            ret_neu=r_neu,
-            ret_fav=r_fav,
-            risco_std=float(np.std([r_adv, r_neu, r_fav])),
-        ))
+        out.append(
+            PortfolioAleatorio(
+                ret_adv=r_adv,
+                ret_neu=r_neu,
+                ret_fav=r_fav,
+                risco_std=float(np.std([r_adv, r_neu, r_fav])),
+            )
+        )
     return out
 
 
@@ -70,9 +74,15 @@ def carteira_mista(
     """
     wl = 1.0 - peso_principal
 
-    r_adv = peso_principal * analise_principal["ret_adv"] + wl * analise_liquida["ret_adv"]
-    r_neu = peso_principal * analise_principal["ret_neu"] + wl * analise_liquida["ret_neu"]
-    r_fav = peso_principal * analise_principal["ret_fav"] + wl * analise_liquida["ret_fav"]
+    r_adv = (
+        peso_principal * analise_principal["ret_adv"] + wl * analise_liquida["ret_adv"]
+    )
+    r_neu = (
+        peso_principal * analise_principal["ret_neu"] + wl * analise_liquida["ret_neu"]
+    )
+    r_fav = (
+        peso_principal * analise_principal["ret_fav"] + wl * analise_liquida["ret_fav"]
+    )
     risco = float(np.std([r_adv, r_neu, r_fav]))
 
     return CarteiraMistaResult(

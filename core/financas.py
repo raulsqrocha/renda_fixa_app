@@ -21,40 +21,40 @@ from typing import TypedDict
 
 
 class FvMensalResult(TypedDict):
-    fv_liq:    float
-    fv_bruto:  float
+    fv_liq: float
+    fv_bruto: float
     total_inv: float
-    ir:        float
+    ir: float
 
 
 class MetricasCarteira(TypedDict):
-    mam:          float
-    vencimento:   float
+    mam: float
+    vencimento: float
     variacao_dia: float
-    pu_hoje:      float
-    pu_carrego:   float
-    quantidade:   float
+    pu_hoje: float
+    pu_carrego: float
+    quantidade: float
 
 
 class AnaliseBatalha(TypedDict):
-    nome:        str
-    tipo:        str
-    ret_adv:     float
-    ret_neu:     float
-    ret_fav:     float
-    ret_real:    float
-    risco_std:   float
+    nome: str
+    tipo: str
+    ret_adv: float
+    ret_neu: float
+    ret_fav: float
+    ret_real: float
+    risco_std: float
     risco_label: str
-    anos_expo:   float
+    anos_expo: float
     hold_to_mat: bool
-    reinvest:    bool
+    reinvest: bool
 
 
 class RetornoCenarioIPCA(TypedDict):
-    taxa_nominal_aa:     float
-    valor_final:         float
+    taxa_nominal_aa: float
+    valor_final: float
     retorno_nominal_pct: float
-    retorno_real_pct:    float
+    retorno_real_pct: float
 
 
 _TIPOS_BATALHA_VALIDOS: frozenset[str] = frozenset({"selic", "pre", "ipca_mais"})
@@ -63,6 +63,7 @@ _TIPOS_BATALHA_VALIDOS: frozenset[str] = frozenset({"selic", "pre", "ipca_mais"}
 # ---------------------------------------------------------------------------
 # Calendário oficial ANBIMA — feriados nacionais para precificação
 # ---------------------------------------------------------------------------
+
 
 def _computar_feriados_anbima(ano_inicio: int = 2015, ano_fim: int = 2070) -> list:
     """
@@ -93,25 +94,25 @@ def _computar_feriados_anbima(ano_inicio: int = 2015, ano_fim: int = 2070) -> li
         pascoa = date(ano, mes_p, dia_p)
 
         feriados += [
-            pascoa - timedelta(days=48),   # Segunda de Carnaval
-            pascoa - timedelta(days=47),   # Terça de Carnaval
-            pascoa - timedelta(days=2),    # Sexta-feira Santa
-            pascoa + timedelta(days=60),   # Corpus Christi
-            date(ano, 1,  1),              # Ano Novo
-            date(ano, 4,  21),             # Tiradentes
-            date(ano, 5,  1),              # Dia do Trabalho
-            date(ano, 9,  7),              # Independência do Brasil
-            date(ano, 10, 12),             # Nossa Senhora Aparecida
-            date(ano, 11, 2),              # Finados
-            date(ano, 11, 15),             # Proclamação da República
-            date(ano, 11, 20),             # Consciência Negra
-            date(ano, 12, 25),             # Natal
+            pascoa - timedelta(days=48),  # Segunda de Carnaval
+            pascoa - timedelta(days=47),  # Terça de Carnaval
+            pascoa - timedelta(days=2),  # Sexta-feira Santa
+            pascoa + timedelta(days=60),  # Corpus Christi
+            date(ano, 1, 1),  # Ano Novo
+            date(ano, 4, 21),  # Tiradentes
+            date(ano, 5, 1),  # Dia do Trabalho
+            date(ano, 9, 7),  # Independência do Brasil
+            date(ano, 10, 12),  # Nossa Senhora Aparecida
+            date(ano, 11, 2),  # Finados
+            date(ano, 11, 15),  # Proclamação da República
+            date(ano, 11, 20),  # Consciência Negra
+            date(ano, 12, 25),  # Natal
         ]
     return sorted(set(feriados))
 
 
 _CALENDARIO_ANBIMA = np.busdaycalendar(
-    holidays=[np.datetime64(d, 'D') for d in _computar_feriados_anbima()]
+    holidays=[np.datetime64(d, "D") for d in _computar_feriados_anbima()]
 )
 
 
@@ -125,17 +126,23 @@ def formatar_brl(valor: float, casas: int = 2) -> str:
 # Utilitários de datas
 # ---------------------------------------------------------------------------
 
+
 def calcular_du(data_inicio: date, data_fim: date) -> int:
     """
     Dias úteis entre duas datas usando o calendário oficial ANBIMA.
     Feriados computados algoritmicamente: Páscoa (Gauss) + fixos nacionais.
     Cobre 2015–2070, sem aproximações.
     """
-    return max(0, int(np.busday_count(
-        np.datetime64(data_inicio, 'D'),
-        np.datetime64(data_fim, 'D'),
-        busdaycal=_CALENDARIO_ANBIMA,
-    )))
+    return max(
+        0,
+        int(
+            np.busday_count(
+                np.datetime64(data_inicio, "D"),
+                np.datetime64(data_fim, "D"),
+                busdaycal=_CALENDARIO_ANBIMA,
+            )
+        ),
+    )
 
 
 def datas_cupom_ntnb(data_hoje: date, data_vencimento: date) -> list[date]:
@@ -155,6 +162,7 @@ def datas_cupom_ntnb(data_hoje: date, data_vencimento: date) -> list[date]:
 # ---------------------------------------------------------------------------
 # Precificação NTN-B (Tesouro IPCA+)
 # ---------------------------------------------------------------------------
+
 
 def cupom_semestral(vna: float, taxa_cupom_anual: float = 0.06) -> float:
     """
@@ -210,12 +218,15 @@ def pu_ntnb(
 # Métricas do Dashboard
 # ---------------------------------------------------------------------------
 
-def taxa_diaria_simulada(taxa_base: float, data_ref: date, choque_bps: float = 3.0) -> float:
+
+def taxa_diaria_simulada(
+    taxa_base: float, data_ref: date, choque_bps: float = 3.0
+) -> float:
     """
     Gera uma variação de taxa determinística por dia (seed = data).
     Garante consistência no mesmo dia e variação entre dias.
     """
-    seed = int(data_ref.strftime('%Y%m%d'))
+    seed = int(data_ref.strftime("%Y%m%d"))
     rng = np.random.default_rng(seed)
     return taxa_base + rng.normal(0, choque_bps / 10_000)
 
@@ -243,23 +254,26 @@ def metricas_carteira(
     # Taxa de ontem simulada (seed da data anterior — consistente e realista)
     taxa_ontem = taxa_diaria_simulada(taxa_real_mercado, data_hoje - timedelta(days=1))
 
-    pu_hoje   = pu_ntnb(vna, taxa_real_mercado, data_hoje, data_vencimento, datas_cupom)
-    pu_ontem  = pu_ntnb(vna, taxa_ontem,        data_hoje, data_vencimento, datas_cupom)
-    pu_carrego = pu_ntnb(vna, taxa_real_contratada, data_hoje, data_vencimento, datas_cupom)
+    pu_hoje = pu_ntnb(vna, taxa_real_mercado, data_hoje, data_vencimento, datas_cupom)
+    pu_ontem = pu_ntnb(vna, taxa_ontem, data_hoje, data_vencimento, datas_cupom)
+    pu_carrego = pu_ntnb(
+        vna, taxa_real_contratada, data_hoje, data_vencimento, datas_cupom
+    )
 
     return {
-        'mam':          quantidade * pu_hoje,
-        'vencimento':   quantidade * pu_carrego,
-        'variacao_dia': (pu_hoje / pu_ontem - 1) * 100,
-        'pu_hoje':      pu_hoje,
-        'pu_carrego':   pu_carrego,
-        'quantidade':   quantidade,
+        "mam": quantidade * pu_hoje,
+        "vencimento": quantidade * pu_carrego,
+        "variacao_dia": (pu_hoje / pu_ontem - 1) * 100,
+        "pu_hoje": pu_hoje,
+        "pu_carrego": pu_carrego,
+        "quantidade": quantidade,
     }
 
 
 # ---------------------------------------------------------------------------
 # Série Temporal para o Gráfico do Paradoxo
 # ---------------------------------------------------------------------------
+
 
 def serie_paradoxo(
     vna: float,
@@ -296,28 +310,32 @@ def serie_paradoxo(
     # Volatilidade escalada pela duração modificada do título.
     # Títulos ultra-longos (ex: RendA+ 2065, T≈40) são muito mais sensíveis
     # a variações de taxa — o preço oscila ~10x mais que um IPCA+ 2029 (T≈3).
-    anos_totais  = (data_vencimento - data_compra).days / 365
-    duracao_mod  = anos_totais / (1 + taxa_real_mercado)
-    sigma = 0.0001 * max(1.0, duracao_mod / 5)   # escala linear com duração/5
+    anos_totais = (data_vencimento - data_compra).days / 365
+    duracao_mod = anos_totais / (1 + taxa_real_mercado)
+    sigma = 0.0001 * max(1.0, duracao_mod / 5)  # escala linear com duração/5
 
     # Seed fixo garante que o gráfico não mude a cada reload.
     # Sem mean-centering: permite drift realista das taxas ao longo do prazo.
     rng = np.random.default_rng(seed=42)
-    shocks    = rng.normal(0, sigma, n)
+    shocks = rng.normal(0, sigma, n)
     taxas_mam = taxa_real_mercado + np.cumsum(shocks)
     taxas_mam = np.clip(taxas_mam, 0.02, 0.20)
 
     if not tem_cupom:
         # Caminho vetorizado: sem cupons → PU = VNA / (1+r)^(du/252)
         # np.busday_count aceita arrays → cálculo em lote sem loop Python
-        venc_d64 = np.datetime64(data_vencimento, 'D')
-        dt_d64   = np.array([np.datetime64(d, 'D') for d in datas.date])
-        du_arr   = np.maximum(0, np.busday_count(dt_d64, venc_d64, busdaycal=_CALENDARIO_ANBIMA))
-        exp_arr  = du_arr / 252.0
+        venc_d64 = np.datetime64(data_vencimento, "D")
+        dt_d64 = np.array([np.datetime64(d, "D") for d in datas.date])
+        du_arr = np.maximum(
+            0, np.busday_count(dt_d64, venc_d64, busdaycal=_CALENDARIO_ANBIMA)
+        )
+        exp_arr = du_arr / 252.0
         # Quando du=0 (data de vencimento), (1+r)^0 = 1 → PU = VNA (correto)
-        vals_mam_arr     = quantidade * vna / (1.0 + taxas_mam) ** exp_arr
+        vals_mam_arr = quantidade * vna / (1.0 + taxas_mam) ** exp_arr
         vals_carrego_arr = quantidade * vna / (1.0 + taxa_real_contratada) ** exp_arr
-        return pd.DataFrame({'data': datas, 'mam': vals_mam_arr, 'carrego': vals_carrego_arr})
+        return pd.DataFrame(
+            {"data": datas, "mam": vals_mam_arr, "carrego": vals_carrego_arr}
+        )
 
     # Caminho com cupons (Juros Semestrais): loop necessário porque o conjunto
     # de cupons futuros muda a cada data → dente de serra natural
@@ -330,19 +348,26 @@ def serie_paradoxo(
             continue
 
         cpns = datas_cupom_ntnb(dt, data_vencimento)
-        vals_mam.append(pu_ntnb(vna, taxas_mam[i], dt, data_vencimento, cpns) * quantidade)
-        vals_carrego.append(pu_ntnb(vna, taxa_real_contratada, dt, data_vencimento, cpns) * quantidade)
+        vals_mam.append(
+            pu_ntnb(vna, taxas_mam[i], dt, data_vencimento, cpns) * quantidade
+        )
+        vals_carrego.append(
+            pu_ntnb(vna, taxa_real_contratada, dt, data_vencimento, cpns) * quantidade
+        )
 
-    return pd.DataFrame({
-        'data':    datas[:len(vals_mam)],
-        'mam':     vals_mam,
-        'carrego': vals_carrego,
-    })
+    return pd.DataFrame(
+        {
+            "data": datas[: len(vals_mam)],
+            "mam": vals_mam,
+            "carrego": vals_carrego,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # Simulador de MaM — Venda Antecipada
 # ---------------------------------------------------------------------------
+
 
 def retorno_mam_antecipado(
     taxa_compra: float,
@@ -381,6 +406,7 @@ def retorno_mam_antecipado(
 # Simulação de Cenários de Inflação
 # ---------------------------------------------------------------------------
 
+
 def retorno_cenario_ipca(
     taxa_real: float,
     ipca_anual: float,
@@ -395,19 +421,20 @@ def retorno_cenario_ipca(
     independente do cenário de IPCA escolhido.
     """
     taxa_nominal = (1 + taxa_real) * (1 + ipca_anual) - 1
-    valor_final  = valor_inicial * (1 + taxa_nominal) ** anos
+    valor_final = valor_inicial * (1 + taxa_nominal) ** anos
 
     return {
-        'taxa_nominal_aa':   taxa_nominal * 100,
-        'valor_final':       valor_final,
-        'retorno_nominal_pct': (valor_final / valor_inicial - 1) * 100,
-        'retorno_real_pct':  ((1 + taxa_real) ** anos - 1) * 100,
+        "taxa_nominal_aa": taxa_nominal * 100,
+        "valor_final": valor_final,
+        "retorno_nominal_pct": (valor_final / valor_inicial - 1) * 100,
+        "retorno_real_pct": ((1 + taxa_real) ** anos - 1) * 100,
     }
 
 
 # ---------------------------------------------------------------------------
 # Batalha de Cenários — Pré vs Pós vs IPCA+
 # ---------------------------------------------------------------------------
+
 
 def retorno_saida_antecipada(
     taxa_compra: float,
@@ -468,9 +495,36 @@ def aliquota_ir_renda_fixa(horizonte_anos: float) -> float:
 # Tabela oficial do IOF regressivo sobre rendimentos de renda fixa (Decreto 6.306/2007)
 # Índice 0 = dia 1, índice 28 = dia 29; dia 30+ → 0%
 _IOF_TABELA = [
-    96, 93, 90, 86, 83, 80, 76, 73, 70, 66,   # dias 1–10
-    63, 60, 56, 53, 50, 46, 43, 40, 36, 33,   # dias 11–20
-    30, 26, 23, 20, 16, 13, 10,  6,  3,  0,   # dias 21–30
+    96,
+    93,
+    90,
+    86,
+    83,
+    80,
+    76,
+    73,
+    70,
+    66,  # dias 1–10
+    63,
+    60,
+    56,
+    53,
+    50,
+    46,
+    43,
+    40,
+    36,
+    33,  # dias 11–20
+    30,
+    26,
+    23,
+    20,
+    16,
+    13,
+    10,
+    6,
+    3,
+    0,  # dias 21–30
 ]
 
 
@@ -495,7 +549,7 @@ def retorno_liquido_ir(retorno_bruto_anual: float, horizonte_anos: float) -> flo
     IR incide sobre o lucro nominal acumulado no período.
     Prejuízo (lucro <= 0) não sofre IR — retorno bruto é mantido.
     """
-    aliq  = aliquota_ir_renda_fixa(horizonte_anos)
+    aliq = aliquota_ir_renda_fixa(horizonte_anos)
     lucro = (1 + retorno_bruto_anual) ** horizonte_anos - 1
     if lucro <= 0:
         return retorno_bruto_anual
@@ -572,10 +626,10 @@ def analise_batalha(
     if tipo not in _TIPOS_BATALHA_VALIDOS:
         raise ValueError(f"tipo desconhecido para analise_batalha: {tipo!r}")
 
-    t  = taxa  / 100
-    ip = ipca  / 100
+    t = taxa / 100
+    ip = ipca / 100
     ck = choque / 100
-    sl = selic  / 100
+    sl = selic / 100
 
     # Reinvestimento: título vence ANTES do horizonte do cliente.
     # IR aplicado dentro de retorno_hold_to_mat_reinvestido com prazo correto por fase.
@@ -583,9 +637,13 @@ def analise_batalha(
 
     if tipo == "selic":
         # Pós-fixado: sem MaM, retorno acompanha Selic — adverso = Selic cai
-        r_adv = retorno_saida_antecipada(max(t - ck, 0.005), max(t - ck, 0.005), anos_total, anos_saida, "selic")
-        r_neu = retorno_saida_antecipada(t,      t,      anos_total, anos_saida, "selic")
-        r_fav = retorno_saida_antecipada(t + ck, t + ck, anos_total, anos_saida, "selic")
+        r_adv = retorno_saida_antecipada(
+            max(t - ck, 0.005), max(t - ck, 0.005), anos_total, anos_saida, "selic"
+        )
+        r_neu = retorno_saida_antecipada(t, t, anos_total, anos_saida, "selic")
+        r_fav = retorno_saida_antecipada(
+            t + ck, t + ck, anos_total, anos_saida, "selic"
+        )
         if com_ir:
             r_adv = retorno_liquido_ir(r_adv, anos_saida)
             r_neu = retorno_liquido_ir(r_neu, anos_saida)
@@ -593,13 +651,19 @@ def analise_batalha(
     elif _reinvest:
         # Título vence antes do horizonte: Fase 1 = carrego até T; Fase 2 = Selic por H−T.
         # Adverso/Favorável refletem variação da Selic na fase de reinvestimento.
-        r_adv = retorno_hold_to_mat_reinvestido(t, anos_total, anos_saida, tipo, ip, max(sl - ck, 0.005), com_ir)
-        r_neu = retorno_hold_to_mat_reinvestido(t, anos_total, anos_saida, tipo, ip, sl,           com_ir)
-        r_fav = retorno_hold_to_mat_reinvestido(t, anos_total, anos_saida, tipo, ip, sl + ck,      com_ir)
+        r_adv = retorno_hold_to_mat_reinvestido(
+            t, anos_total, anos_saida, tipo, ip, max(sl - ck, 0.005), com_ir
+        )
+        r_neu = retorno_hold_to_mat_reinvestido(
+            t, anos_total, anos_saida, tipo, ip, sl, com_ir
+        )
+        r_fav = retorno_hold_to_mat_reinvestido(
+            t, anos_total, anos_saida, tipo, ip, sl + ck, com_ir
+        )
     else:
         # Saída antecipada (H < T) ou H == T: MaM determina o retorno
         r_adv = retorno_saida_antecipada(t, t + ck, anos_total, anos_saida, tipo, ip)
-        r_neu = retorno_saida_antecipada(t, t,      anos_total, anos_saida, tipo, ip)
+        r_neu = retorno_saida_antecipada(t, t, anos_total, anos_saida, tipo, ip)
         r_fav = retorno_saida_antecipada(t, t - ck, anos_total, anos_saida, tipo, ip)
         if com_ir:
             r_adv = retorno_liquido_ir(r_adv, anos_saida)
@@ -623,35 +687,44 @@ def analise_batalha(
     r_real_neu = (1 + r_neu) / (1 + ip) - 1 if ip > 0 else r_neu
 
     return {
-        "nome":        nome,
-        "tipo":        tipo,
-        "ret_adv":     r_adv  * 100,
-        "ret_neu":     r_neu  * 100,
-        "ret_fav":     r_fav  * 100,
-        "ret_real":    r_real_neu * 100,
-        "risco_std":   risco_std  * 100,
+        "nome": nome,
+        "tipo": tipo,
+        "ret_adv": r_adv * 100,
+        "ret_neu": r_neu * 100,
+        "ret_fav": r_fav * 100,
+        "ret_real": r_real_neu * 100,
+        "risco_std": risco_std * 100,
         "risco_label": risco_label,
-        "anos_expo":   anos_expo,
+        "anos_expo": anos_expo,
         "hold_to_mat": anos_saida >= anos_total,
-        "reinvest":    _reinvest,
+        "reinvest": _reinvest,
     }
 
 
-def fv_mensal(taxa_a: float, n_meses: int, cap: float, pmt: float, aliq: float) -> FvMensalResult:
+def fv_mensal(
+    taxa_a: float, n_meses: int, cap: float, pmt: float, aliq: float
+) -> FvMensalResult:
     """Valor futuro com aportes mensais. IR sobre o ganho total no vencimento."""
     r_m = (1 + taxa_a) ** (1 / 12) - 1 if taxa_a > 0 else 0.0
     n = float(n_meses)
     if n == 0:
         return {"fv_liq": cap, "fv_bruto": cap, "total_inv": cap, "ir": 0.0}
     fator = (1 + r_m) ** n_meses
-    fv_bruto  = cap * fator + (pmt * (fator - 1) / r_m if abs(r_m) > 1e-10 else pmt * n)
+    fv_bruto = cap * fator + (pmt * (fator - 1) / r_m if abs(r_m) > 1e-10 else pmt * n)
     total_inv = cap + pmt * n
-    ganho     = max(0.0, fv_bruto - total_inv)
-    ir        = ganho * aliq
-    return {"fv_liq": fv_bruto - ir, "fv_bruto": fv_bruto, "total_inv": total_inv, "ir": ir}
+    ganho = max(0.0, fv_bruto - total_inv)
+    ir = ganho * aliq
+    return {
+        "fv_liq": fv_bruto - ir,
+        "fv_bruto": fv_bruto,
+        "total_inv": total_inv,
+        "ir": ir,
+    }
 
 
-def pmt_para_meta(taxa_a: float, n_meses: int, cap: float, meta: float, aliq: float) -> float:
+def pmt_para_meta(
+    taxa_a: float, n_meses: int, cap: float, meta: float, aliq: float
+) -> float:
     """Aporte mensal necessário para atingir 'meta' líquida dado capital inicial."""
     r_m = (1 + taxa_a) ** (1 / 12) - 1 if taxa_a > 0 else 0.0
     n = float(n_meses)
@@ -664,5 +737,3 @@ def pmt_para_meta(taxa_a: float, n_meses: int, cap: float, meta: float, aliq: fl
         A = cap * (fator * (1 - aliq) + aliq)
         B = (fator - 1) / r_m * (1 - aliq) + n * aliq
     return max(0.0, (meta - A) / B) if B > 0 else 0.0
-
-

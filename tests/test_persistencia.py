@@ -27,6 +27,7 @@ from core.persistencia import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _patch(tmp_file: Path, is_cloud: bool = False):
     """Context manager que substitui _PREFS_FILE e _IS_CLOUD no módulo."""
     return (
@@ -38,6 +39,7 @@ def _patch(tmp_file: Path, is_cloud: bool = False):
 # ---------------------------------------------------------------------------
 # _default_prefs
 # ---------------------------------------------------------------------------
+
 
 class TestDefaultPrefs:
     def test_contem_portfolio(self):
@@ -60,27 +62,34 @@ class TestDefaultPrefs:
 # carregar
 # ---------------------------------------------------------------------------
 
+
 class TestCarregar:
     def test_sem_arquivo_retorna_defaults(self, tmp_path):
         arquivo = tmp_path / "nao_existe.json"
-        with patch.object(persistencia, "_PREFS_FILE", arquivo), \
-             patch.object(persistencia, "_IS_CLOUD", False):
+        with (
+            patch.object(persistencia, "_PREFS_FILE", arquivo),
+            patch.object(persistencia, "_IS_CLOUD", False),
+        ):
             res = carregar()
         assert res == _default_prefs()
 
     def test_cloud_retorna_defaults_sem_ler_arquivo(self, tmp_path):
         arquivo = tmp_path / "prefs.json"
         arquivo.write_text(json.dumps({"port_valor": 99_000.0}), encoding="utf-8")
-        with patch.object(persistencia, "_PREFS_FILE", arquivo), \
-             patch.object(persistencia, "_IS_CLOUD", True):
+        with (
+            patch.object(persistencia, "_PREFS_FILE", arquivo),
+            patch.object(persistencia, "_IS_CLOUD", True),
+        ):
             res = carregar()
         assert res["port_valor"] == _default_prefs()["port_valor"]
 
     def test_arquivo_valido_mesclado_com_defaults(self, tmp_path):
         arquivo = tmp_path / "prefs.json"
         arquivo.write_text(json.dumps({"port_valor": 25_000.0}), encoding="utf-8")
-        with patch.object(persistencia, "_PREFS_FILE", arquivo), \
-             patch.object(persistencia, "_IS_CLOUD", False):
+        with (
+            patch.object(persistencia, "_PREFS_FILE", arquivo),
+            patch.object(persistencia, "_IS_CLOUD", False),
+        ):
             res = carregar()
         assert res["port_valor"] == 25_000.0
         # Chaves não salvas ainda têm o default
@@ -89,8 +98,10 @@ class TestCarregar:
     def test_json_corrompido_retorna_defaults(self, tmp_path):
         arquivo = tmp_path / "prefs.json"
         arquivo.write_text("{ isso nao e json valido }", encoding="utf-8")
-        with patch.object(persistencia, "_PREFS_FILE", arquivo), \
-             patch.object(persistencia, "_IS_CLOUD", False):
+        with (
+            patch.object(persistencia, "_PREFS_FILE", arquivo),
+            patch.object(persistencia, "_IS_CLOUD", False),
+        ):
             res = carregar()
         assert res == _default_prefs()
 
@@ -98,16 +109,22 @@ class TestCarregar:
         arquivo = tmp_path / "prefs.json"
         # _portfolio deveria ser lista, mas foi salvo como string
         arquivo.write_text(json.dumps({"_portfolio": "corrompido"}), encoding="utf-8")
-        with patch.object(persistencia, "_PREFS_FILE", arquivo), \
-             patch.object(persistencia, "_IS_CLOUD", False):
+        with (
+            patch.object(persistencia, "_PREFS_FILE", arquivo),
+            patch.object(persistencia, "_IS_CLOUD", False),
+        ):
             res = carregar()
         assert res["_portfolio"] == []
 
     def test_analysis_pos_idx_nao_int_resetado(self, tmp_path):
         arquivo = tmp_path / "prefs.json"
-        arquivo.write_text(json.dumps({"_analysis_pos_idx": "errado"}), encoding="utf-8")
-        with patch.object(persistencia, "_PREFS_FILE", arquivo), \
-             patch.object(persistencia, "_IS_CLOUD", False):
+        arquivo.write_text(
+            json.dumps({"_analysis_pos_idx": "errado"}), encoding="utf-8"
+        )
+        with (
+            patch.object(persistencia, "_PREFS_FILE", arquivo),
+            patch.object(persistencia, "_IS_CLOUD", False),
+        ):
             res = carregar()
         assert res["_analysis_pos_idx"] == 0
 
@@ -116,19 +133,24 @@ class TestCarregar:
 # salvar
 # ---------------------------------------------------------------------------
 
+
 class TestSalvar:
     def test_escreve_json_em_disco(self, tmp_path):
         arquivo = tmp_path / "prefs.json"
-        with patch.object(persistencia, "_PREFS_FILE", arquivo), \
-             patch.object(persistencia, "_IS_CLOUD", False):
+        with (
+            patch.object(persistencia, "_PREFS_FILE", arquivo),
+            patch.object(persistencia, "_IS_CLOUD", False),
+        ):
             salvar({"port_valor": 30_000.0})
         dados = json.loads(arquivo.read_text(encoding="utf-8"))
         assert dados["port_valor"] == 30_000.0
 
     def test_cloud_nao_escreve(self, tmp_path):
         arquivo = tmp_path / "prefs.json"
-        with patch.object(persistencia, "_PREFS_FILE", arquivo), \
-             patch.object(persistencia, "_IS_CLOUD", True):
+        with (
+            patch.object(persistencia, "_PREFS_FILE", arquivo),
+            patch.object(persistencia, "_IS_CLOUD", True),
+        ):
             salvar({"port_valor": 30_000.0})
         assert not arquivo.exists()
 
@@ -136,8 +158,10 @@ class TestSalvar:
         arquivo = tmp_path / "prefs.json"
         # Estado inicial com sim_prazo_saida
         arquivo.write_text(json.dumps({"sim_prazo_saida": 7}), encoding="utf-8")
-        with patch.object(persistencia, "_PREFS_FILE", arquivo), \
-             patch.object(persistencia, "_IS_CLOUD", False):
+        with (
+            patch.object(persistencia, "_PREFS_FILE", arquivo),
+            patch.object(persistencia, "_IS_CLOUD", False),
+        ):
             salvar({"port_valor": 20_000.0})
         dados = json.loads(arquivo.read_text(encoding="utf-8"))
         assert dados["sim_prazo_saida"] == 7
@@ -145,8 +169,10 @@ class TestSalvar:
 
     def test_date_serializada_como_iso(self, tmp_path):
         arquivo = tmp_path / "prefs.json"
-        with patch.object(persistencia, "_PREFS_FILE", arquivo), \
-             patch.object(persistencia, "_IS_CLOUD", False):
+        with (
+            patch.object(persistencia, "_PREFS_FILE", arquivo),
+            patch.object(persistencia, "_IS_CLOUD", False),
+        ):
             salvar({"port_data": date(2024, 6, 15)})
         dados = json.loads(arquivo.read_text(encoding="utf-8"))
         assert dados["port_data"] == "2024-06-15"
@@ -154,8 +180,10 @@ class TestSalvar:
     def test_sobrescreve_chave_existente(self, tmp_path):
         arquivo = tmp_path / "prefs.json"
         arquivo.write_text(json.dumps({"port_valor": 5_000.0}), encoding="utf-8")
-        with patch.object(persistencia, "_PREFS_FILE", arquivo), \
-             patch.object(persistencia, "_IS_CLOUD", False):
+        with (
+            patch.object(persistencia, "_PREFS_FILE", arquivo),
+            patch.object(persistencia, "_IS_CLOUD", False),
+        ):
             salvar({"port_valor": 15_000.0})
         dados = json.loads(arquivo.read_text(encoding="utf-8"))
         assert dados["port_valor"] == 15_000.0
@@ -165,14 +193,17 @@ class TestSalvar:
         mock_path = MagicMock(spec=Path)
         mock_path.exists.return_value = False
         mock_path.open.side_effect = PermissionError("sem permissão")
-        with patch.object(persistencia, "_PREFS_FILE", mock_path), \
-             patch.object(persistencia, "_IS_CLOUD", False):
+        with (
+            patch.object(persistencia, "_PREFS_FILE", mock_path),
+            patch.object(persistencia, "_IS_CLOUD", False),
+        ):
             salvar({"port_valor": 10_000.0})  # não deve lançar exceção
 
 
 # ---------------------------------------------------------------------------
 # inicializar_session
 # ---------------------------------------------------------------------------
+
 
 class TestInicializarSession:
     def _run(self, prefs: dict, state: dict | None = None) -> dict:

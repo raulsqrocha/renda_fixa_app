@@ -9,6 +9,7 @@ from telas.comparar import _taxa_equivalente_isento, _taxa_bruta_necessaria
 # _taxa_equivalente_isento
 # ---------------------------------------------------------------------------
 
+
 class TestTaxaEquivalenteIsento:
     def test_formula_basica(self):
         # CDB 14% com alíq 15% → líquido = 14 * (1 - 0.15) = 11.9%
@@ -38,6 +39,7 @@ class TestTaxaEquivalenteIsento:
 # ---------------------------------------------------------------------------
 # _taxa_bruta_necessaria
 # ---------------------------------------------------------------------------
+
 
 class TestTaxaBrutaNecessaria:
     def test_inversa_da_equivalente_isento(self):

@@ -16,7 +16,9 @@ Evolução futura:
 """
 
 import logging
+import time
 import requests
+from requests.exceptions import HTTPError
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -26,11 +28,40 @@ import pytz
 _log = logging.getLogger(__name__)
 
 
+def _get_com_retry(url: str, *, timeout: int, tentativas: int = 3) -> requests.Response:
+    """
+    Wrapper de requests.get com retry exponencial para erros retriáveis.
+
+    Retenta em: erros 5xx (servidor), ConnectionError, Timeout.
+    Não retenta em: erros 4xx (cliente) — são determinísticos.
+    Intervalo entre tentativas: 0.5s, 1s (backoff linear).
+    Só executa dentro de funções cacheadas — o sleep não bloqueia renders.
+    """
+    ultimo_erro: Exception = RuntimeError("sem tentativas")
+    for i in range(tentativas):
+        try:
+            resp = requests.get(url, timeout=timeout)
+            resp.raise_for_status()
+            return resp
+        except HTTPError as e:
+            # Erros 4xx são determinísticos — não adianta retentar
+            if e.response is not None and e.response.status_code < 500:
+                raise
+            ultimo_erro = e
+        except Exception as e:
+            ultimo_erro = e
+        if i < tentativas - 1:
+            time.sleep(0.5 * (i + 1))
+    raise ultimo_erro
+
+
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
 
-URL_BCB_IPCA    = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/200?formato=json"
+URL_BCB_IPCA = (
+    "https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/200?formato=json"
+)
 # Tesouro Transparente — CSV oficial, gratuito, sem auth, atualização diária
 URL_TESOURO_CSV = (
     "https://www.tesourotransparente.gov.br/ckan/dataset/"
@@ -57,19 +88,32 @@ VNA_FALLBACK = round(
 # Juros Semestrais → com cupons → gráfico dente de serra
 TITULOS_CONFIG: dict = {
     # IPCA+ Principal (sem cupons) — mai/2026
-    "Tesouro IPCA+ 2032": {"vencimento": date(2032, 8, 15),  "tem_cupom": False},
-    "Tesouro IPCA+ 2040": {"vencimento": date(2040, 8, 15),  "tem_cupom": False},
-    "Tesouro IPCA+ 2050": {"vencimento": date(2050, 8, 15),  "tem_cupom": False},
+    "Tesouro IPCA+ 2032": {"vencimento": date(2032, 8, 15), "tem_cupom": False},
+    "Tesouro IPCA+ 2040": {"vencimento": date(2040, 8, 15), "tem_cupom": False},
+    "Tesouro IPCA+ 2050": {"vencimento": date(2050, 8, 15), "tem_cupom": False},
     # IPCA+ com Juros Semestrais (cupom a cada 6 meses)
-    "Tesouro IPCA+ com Juros Semestrais 2037": {"vencimento": date(2037, 5, 15), "tem_cupom": True},
-    "Tesouro IPCA+ com Juros Semestrais 2045": {"vencimento": date(2045, 5, 15), "tem_cupom": True},
-    "Tesouro IPCA+ com Juros Semestrais 2060": {"vencimento": date(2060, 8, 15), "tem_cupom": True},
+    "Tesouro IPCA+ com Juros Semestrais 2037": {
+        "vencimento": date(2037, 5, 15),
+        "tem_cupom": True,
+    },
+    "Tesouro IPCA+ com Juros Semestrais 2045": {
+        "vencimento": date(2045, 5, 15),
+        "tem_cupom": True,
+    },
+    "Tesouro IPCA+ com Juros Semestrais 2060": {
+        "vencimento": date(2060, 8, 15),
+        "tem_cupom": True,
+    },
     # Tesouro Renda+ Aposentadoria Extra (exibido como RendA+)
-    **{f"Tesouro RendA+ {ano}": {"vencimento": date(ano, 12, 15), "tem_cupom": False}
-       for ano in [2030, 2035, 2040, 2045, 2050, 2055, 2060, 2065]},
+    **{
+        f"Tesouro RendA+ {ano}": {"vencimento": date(ano, 12, 15), "tem_cupom": False}
+        for ano in [2030, 2035, 2040, 2045, 2050, 2055, 2060, 2065]
+    },
     # Tesouro Educa+ (nome real no CSV; exibido como Educar+ no app)
-    **{f"Tesouro Educar+ {ano}": {"vencimento": date(ano, 12, 15), "tem_cupom": False}
-       for ano in range(2027, 2045)},
+    **{
+        f"Tesouro Educar+ {ano}": {"vencimento": date(ano, 12, 15), "tem_cupom": False}
+        for ano in range(2027, 2045)
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -79,12 +123,32 @@ TITULOS_CONFIG: dict = {
 
 TITULOS_BATALHA: dict = {
     # Pós-Fixado (taxa_ref=None: vem da projeção do usuário)
-    "Tesouro Selic 2031":     {"vencimento": date(2031, 3, 1),  "tipo": "selic", "taxa_ref": None},
-    "Tesouro Reserva":        {"vencimento": date(2027, 3, 1),  "tipo": "selic", "taxa_ref": None},
+    "Tesouro Selic 2031": {
+        "vencimento": date(2031, 3, 1),
+        "tipo": "selic",
+        "taxa_ref": None,
+    },
+    "Tesouro Reserva": {
+        "vencimento": date(2027, 3, 1),
+        "tipo": "selic",
+        "taxa_ref": None,
+    },
     # Pré-Fixado
-    "Tesouro Prefixado 2029": {"vencimento": date(2029, 1, 1),  "tipo": "pre",   "taxa_ref": 14.50},
-    "Tesouro Prefixado 2032": {"vencimento": date(2032, 1, 1),  "tipo": "pre",   "taxa_ref": 14.89},
-    "Tesouro Prefixado com Juros Semestrais 2037": {"vencimento": date(2037, 1, 1), "tipo": "pre", "taxa_ref": 14.89},
+    "Tesouro Prefixado 2029": {
+        "vencimento": date(2029, 1, 1),
+        "tipo": "pre",
+        "taxa_ref": 14.50,
+    },
+    "Tesouro Prefixado 2032": {
+        "vencimento": date(2032, 1, 1),
+        "tipo": "pre",
+        "taxa_ref": 14.89,
+    },
+    "Tesouro Prefixado com Juros Semestrais 2037": {
+        "vencimento": date(2037, 1, 1),
+        "tipo": "pre",
+        "taxa_ref": 14.89,
+    },
     # Todos os IPCA+, RendA+ e Educar+ do catálogo completo
     **{
         nome: {"vencimento": cfg["vencimento"], "tipo": "ipca_mais", "taxa_ref": None}
@@ -95,10 +159,14 @@ TITULOS_BATALHA: dict = {
 # Seletor de dois níveis: categoria → lista de títulos
 # Derivado automaticamente de TITULOS_CONFIG para manter consistência
 CATEGORIAS_TITULOS: dict = {
-    "IPCA+ Principal":             [k for k in TITULOS_CONFIG if k.startswith("Tesouro IPCA+") and "Semestrais" not in k],
-    "IPCA+ com Juros Semestrais":  [k for k in TITULOS_CONFIG if "Semestrais" in k],
-    "Tesouro RendA+":              [k for k in TITULOS_CONFIG if "RendA+" in k],
-    "Tesouro Educar+":             [k for k in TITULOS_CONFIG if "Educar+" in k],
+    "IPCA+ Principal": [
+        k
+        for k in TITULOS_CONFIG
+        if k.startswith("Tesouro IPCA+") and "Semestrais" not in k
+    ],
+    "IPCA+ com Juros Semestrais": [k for k in TITULOS_CONFIG if "Semestrais" in k],
+    "Tesouro RendA+": [k for k in TITULOS_CONFIG if "RendA+" in k],
+    "Tesouro Educar+": [k for k in TITULOS_CONFIG if "Educar+" in k],
 }
 
 # Taxas de referência para o fallback — extraídas do Tesouro Transparente em 26/05/2026
@@ -146,6 +214,7 @@ _TAXAS_REF: dict = {
 # Cache inteligente: chave muda às 14h de Brasília (pós-fechamento TD)
 # ---------------------------------------------------------------------------
 
+
 def chave_cache_mercado() -> str:
     """
     Retorna string que identifica o "período de dados" atual.
@@ -168,6 +237,7 @@ def timestamp_ultima_atualizacao(chave: str) -> datetime:
 # IPCA — Banco Central do Brasil
 # ---------------------------------------------------------------------------
 
+
 @st.cache_data(ttl=3600 * 4)
 def buscar_selic_meta_bcb() -> float:
     """
@@ -176,9 +246,8 @@ def buscar_selic_meta_bcb() -> float:
     Fallback: 14.75% se a API estiver indisponível.
     """
     try:
-        url  = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados/ultimos/1?formato=json"
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
+        url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados/ultimos/1?formato=json"
+        resp = _get_com_retry(url, timeout=10)
         return float(resp.json()[0]["valor"])
     except Exception as e:
         _log.warning("BCB Selic meta indisponível (%s) — fallback 14.75%%", e)
@@ -198,7 +267,6 @@ def buscar_selic_na_data(data_compra: "date") -> float:
     Busca os 10 dias anteriores à data para garantir que há pelo menos
     um dia útil no intervalo. Fallback: 14.75%.
     """
-    from datetime import timedelta
     try:
         ini = (data_compra - timedelta(days=10)).strftime("%d/%m/%Y")
         fim = data_compra.strftime("%d/%m/%Y")
@@ -206,13 +274,16 @@ def buscar_selic_na_data(data_compra: "date") -> float:
             f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.4189/dados"
             f"?formato=json&dataInicial={ini}&dataFinal={fim}"
         )
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
+        resp = _get_com_retry(url, timeout=10)
         dados = resp.json()
         if dados:
             return float(dados[-1]["valor"])
     except Exception as e:
-        _log.warning("BCB Selic efetiva indisponível para %s (%s) — fallback 14.75%%", data_compra, e)
+        _log.warning(
+            "BCB Selic efetiva indisponível para %s (%s) — fallback 14.75%%",
+            data_compra,
+            e,
+        )
     return 14.75
 
 
@@ -223,12 +294,10 @@ def buscar_ipca_bcb() -> pd.DataFrame:
     TTL de 8 horas — dados mudam apenas uma vez por mês.
     """
     try:
-        resp = requests.get(URL_BCB_IPCA, timeout=15)
-        resp.raise_for_status()
-
+        resp = _get_com_retry(URL_BCB_IPCA, timeout=15)
         df = pd.DataFrame(resp.json())
         df.columns = ["data", "valor"]
-        df["data"]  = pd.to_datetime(df["data"], format="%d/%m/%Y")
+        df["data"] = pd.to_datetime(df["data"], format="%d/%m/%Y")
         df["valor"] = df["valor"].astype(float)
         df = df.sort_values("data").reset_index(drop=True)
         df["_is_fallback"] = False
@@ -241,37 +310,163 @@ def buscar_ipca_bcb() -> pd.DataFrame:
 
 def _ipca_fallback() -> pd.DataFrame:
     """
-    Série histórica real do IPCA mensal: jan/2015 a mai/2026 (137 meses).
-    Jan–dez/2025: oficiais BCB. Jan–abr/2026: oficiais BCB. Mai/2026: estimativa.
+    Série histórica real do IPCA mensal: jan/2015 a jun/2026 (138 meses).
+    Jan–dez/2025: oficiais BCB. Jan–mai/2026: oficiais BCB. Jun/2026: estimativa.
     Usada quando a API do BCB está indisponível.
     """
     valores = [
         # 2015
-        1.24, 1.22, 1.32, 0.71, 0.74, 0.79, 0.62, 0.22, 0.54, 0.82, 1.01, 0.96,
+        1.24,
+        1.22,
+        1.32,
+        0.71,
+        0.74,
+        0.79,
+        0.62,
+        0.22,
+        0.54,
+        0.82,
+        1.01,
+        0.96,
         # 2016
-        1.27, 0.90, 0.43, 0.61, 0.78, 0.35, 0.52, 0.44, 0.08, 0.26, 0.18, 0.30,
+        1.27,
+        0.90,
+        0.43,
+        0.61,
+        0.78,
+        0.35,
+        0.52,
+        0.44,
+        0.08,
+        0.26,
+        0.18,
+        0.30,
         # 2017
-        0.38, 0.33, 0.25, 0.14, 0.31, -0.23, 0.24, 0.19, 0.16, 0.42, 0.28, 0.44,
+        0.38,
+        0.33,
+        0.25,
+        0.14,
+        0.31,
+        -0.23,
+        0.24,
+        0.19,
+        0.16,
+        0.42,
+        0.28,
+        0.44,
         # 2018
-        0.29, 0.32, 0.09, 0.22, 0.40, 1.26, 0.33, -0.09, 0.48, 0.45, -0.21, 0.15,
+        0.29,
+        0.32,
+        0.09,
+        0.22,
+        0.40,
+        1.26,
+        0.33,
+        -0.09,
+        0.48,
+        0.45,
+        -0.21,
+        0.15,
         # 2019
-        0.32, 0.43, 0.75, 0.57, 0.13, 0.01, 0.19, 0.11, -0.04, 0.10, 0.51, 1.15,
+        0.32,
+        0.43,
+        0.75,
+        0.57,
+        0.13,
+        0.01,
+        0.19,
+        0.11,
+        -0.04,
+        0.10,
+        0.51,
+        1.15,
         # 2020
-        0.21, 0.25, 0.07, -0.31, -0.38, 0.26, 0.36, 0.24, 0.64, 0.86, 0.89, 1.35,
+        0.21,
+        0.25,
+        0.07,
+        -0.31,
+        -0.38,
+        0.26,
+        0.36,
+        0.24,
+        0.64,
+        0.86,
+        0.89,
+        1.35,
         # 2021
-        0.25, 0.86, 0.93, 0.31, 0.83, 0.53, 0.96, 0.87, 1.16, 1.25, 0.95, 0.73,
+        0.25,
+        0.86,
+        0.93,
+        0.31,
+        0.83,
+        0.53,
+        0.96,
+        0.87,
+        1.16,
+        1.25,
+        0.95,
+        0.73,
         # 2022
-        0.54, 1.01, 1.62, 1.06, 0.47, 0.67, -0.68, -0.36, -0.29, 0.59, 0.41, 0.54,
+        0.54,
+        1.01,
+        1.62,
+        1.06,
+        0.47,
+        0.67,
+        -0.68,
+        -0.36,
+        -0.29,
+        0.59,
+        0.41,
+        0.54,
         # 2023
-        0.53, 0.84, 0.71, 0.61, 0.23, -0.08, 0.12, -0.02, 0.26, 0.24, 0.28, 0.62,
+        0.53,
+        0.84,
+        0.71,
+        0.61,
+        0.23,
+        -0.08,
+        0.12,
+        -0.02,
+        0.26,
+        0.24,
+        0.28,
+        0.62,
         # 2024
-        0.42, 0.83, 0.16, 0.38, 0.46, 0.20, 0.38, -0.02, 0.44, 0.56, 0.39, 0.52,
+        0.42,
+        0.83,
+        0.16,
+        0.38,
+        0.46,
+        0.20,
+        0.38,
+        -0.02,
+        0.44,
+        0.56,
+        0.39,
+        0.52,
         # 2025 — fonte: BCB Série 433 (verificado em 27/05/2026)
-        0.16, 1.31, 0.56, 0.43, 0.26, 0.24, 0.26, -0.11, 0.48, 0.09, 0.18, 0.33,
-        # 2026 (jan–abr: oficiais BCB; mai: estimativa — atualizar quando publicado)
-        0.33, 0.70, 0.88, 0.67, 0.43,
+        0.16,
+        1.31,
+        0.56,
+        0.43,
+        0.26,
+        0.24,
+        0.26,
+        -0.11,
+        0.48,
+        0.09,
+        0.18,
+        0.33,
+        # 2026 (jan–mai: oficiais BCB; jun: estimativa — atualizar quando publicado ~jul/2026)
+        0.33,
+        0.70,
+        0.88,
+        0.67,
+        0.43,
+        0.40,
     ]
-    datas = pd.date_range("2015-01-01", periods=137, freq="MS")
+    datas = pd.date_range("2015-01-01", periods=138, freq="MS")
     df = pd.DataFrame({"data": datas, "valor": valores})
     df["_is_fallback"] = True
     return df
@@ -280,6 +475,7 @@ def _ipca_fallback() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # VNA — calculado via BCB (substituto temporário do endpoint ANBIMA)
 # ---------------------------------------------------------------------------
+
 
 def calcular_vna_via_bcb(df_ipca: pd.DataFrame) -> float:
     """
@@ -291,13 +487,15 @@ def calcular_vna_via_bcb(df_ipca: pd.DataFrame) -> float:
     estiverem disponíveis em st.secrets["anbima"]. O restante do app usa
     apenas o float retornado por esta função.
     """
+    if df_ipca.empty or "data" not in df_ipca.columns:
+        return VNA_FALLBACK
     corte = pd.Timestamp("2015-01-01")
     df = df_ipca[df_ipca["data"] >= corte].copy()
 
     if df.empty:
         return VNA_FALLBACK  # fallback dinâmico quando API do BCB está offline
 
-    fator = float(np.prod(1 + df["valor"].values / 100))
+    fator = float(np.prod(1 + df["valor"].to_numpy(dtype=float) / 100))
     return round(VNA_BASE_DEZ2014 * fator, 2)
 
 
@@ -311,6 +509,8 @@ def calcular_vna_em_data(df_ipca: pd.DataFrame, data_ref: date) -> float:
     Usado para calcular o PU correto na data de compra — sem esse ajuste,
     o app subestimaria MaM e carrego pelo IPCA acumulado desde a compra.
     """
+    if df_ipca.empty or "data" not in df_ipca.columns:
+        return VNA_BASE_DEZ2014
     corte = pd.Timestamp("2015-01-01")
     limite = pd.Timestamp(data_ref.replace(day=1))
     df = df_ipca[(df_ipca["data"] >= corte) & (df_ipca["data"] <= limite)].copy()
@@ -318,13 +518,14 @@ def calcular_vna_em_data(df_ipca: pd.DataFrame, data_ref: date) -> float:
     if df.empty:
         return VNA_BASE_DEZ2014
 
-    fator = float(np.prod(1 + df["valor"].values / 100))
+    fator = float(np.prod(1 + df["valor"].to_numpy(dtype=float) / 100))
     return round(VNA_BASE_DEZ2014 * fator, 2)
 
 
 # ---------------------------------------------------------------------------
 # Tesouro Direto — preços e taxas
 # ---------------------------------------------------------------------------
+
 
 def construir_nome_titulo(tipo_csv: str, ano_venc: int) -> str | None:
     """
@@ -362,9 +563,8 @@ def buscar_titulos_tesouro(chave_cache: str) -> pd.DataFrame:
     """
     try:
         from io import StringIO
-        resp = requests.get(URL_TESOURO_CSV, timeout=30)
-        resp.raise_for_status()
 
+        resp = _get_com_retry(URL_TESOURO_CSV, timeout=30)
         df_raw = pd.read_csv(
             StringIO(resp.text),
             sep=";",
@@ -398,14 +598,16 @@ def buscar_titulos_tesouro(chave_cache: str) -> pd.DataFrame:
             nome = construir_nome_titulo(tipo_csv, venc.year)
             if not nome or nome not in nomes_validos:
                 continue
-            registros.append({
-                "nome":        nome,
-                "vencimento":  venc.strftime("%Y-%m-%d"),
-                "taxa_compra": _f(row.get("Taxa Compra Manha", 0)),
-                "taxa_venda":  _f(row.get("Taxa Venda Manha",  0)),
-                "pu_compra":   _f(row.get("PU Compra Manha",   0)),
-                "pu_venda":    _f(row.get("PU Venda Manha",    0)),
-            })
+            registros.append(
+                {
+                    "nome": nome,
+                    "vencimento": venc.strftime("%Y-%m-%d"),
+                    "taxa_compra": _f(row.get("Taxa Compra Manha", 0)),
+                    "taxa_venda": _f(row.get("Taxa Venda Manha", 0)),
+                    "pu_compra": _f(row.get("PU Compra Manha", 0)),
+                    "pu_venda": _f(row.get("PU Venda Manha", 0)),
+                }
+            )
 
         if not registros:
             return _titulos_fallback()
@@ -415,7 +617,10 @@ def buscar_titulos_tesouro(chave_cache: str) -> pd.DataFrame:
         return df_out
 
     except Exception as e:
-        _log.warning("Tesouro Direto CSV indisponível (%s) — usando taxas de referência locais", e)
+        _log.warning(
+            "Tesouro Direto CSV indisponível (%s) — usando taxas de referência locais",
+            e,
+        )
         return _titulos_fallback()
 
 
@@ -426,6 +631,8 @@ def _titulos_fallback() -> pd.DataFrame:
     Taxas em _TAXAS_REF extraídas em 26/05/2026 — atualizar periodicamente.
     """
     hoje = date.today()
+    # Usa VNA calculado pelo IPCA acumulado real (muito mais preciso que VNA_FALLBACK 5% flat)
+    _vna_fb = calcular_vna_via_bcb(_ipca_fallback())
     registros = []
 
     for nome, cfg in TITULOS_CONFIG.items():
@@ -433,16 +640,18 @@ def _titulos_fallback() -> pd.DataFrame:
         if venc <= hoje:
             continue
         taxa = _TAXAS_REF.get(nome, 7.50)
-        T    = max(0.1, (venc - hoje).days / 365)
-        pu   = round(VNA_FALLBACK / (1 + taxa / 100) ** T, 2)
-        registros.append({
-            "nome":        nome,
-            "vencimento":  venc.isoformat(),
-            "taxa_compra": taxa,
-            "taxa_venda":  round(taxa + 0.03, 2),
-            "pu_compra":   pu,
-            "pu_venda":    round(pu * 0.995, 2),
-        })
+        T = max(0.1, (venc - hoje).days / 365)
+        pu = round(_vna_fb / (1 + taxa / 100) ** T, 2)
+        registros.append(
+            {
+                "nome": nome,
+                "vencimento": venc.isoformat(),
+                "taxa_compra": taxa,
+                "taxa_venda": round(taxa + 0.03, 2),
+                "pu_compra": pu,
+                "pu_venda": round(pu * 0.995, 2),
+            }
+        )
 
     for nome, cfg in TITULOS_BATALHA.items():
         if cfg["tipo"] not in ("selic", "pre"):
@@ -451,14 +660,16 @@ def _titulos_fallback() -> pd.DataFrame:
         if venc <= hoje:
             continue
         taxa = cfg.get("taxa_ref") or (14.75 if cfg["tipo"] == "selic" else 14.0)
-        registros.append({
-            "nome":        nome,
-            "vencimento":  venc.isoformat(),
-            "taxa_compra": taxa,
-            "taxa_venda":  round(taxa + 0.02, 2),
-            "pu_compra":   0.0,
-            "pu_venda":    0.0,
-        })
+        registros.append(
+            {
+                "nome": nome,
+                "vencimento": venc.isoformat(),
+                "taxa_compra": taxa,
+                "taxa_venda": round(taxa + 0.02, 2),
+                "pu_compra": 0.0,
+                "pu_venda": 0.0,
+            }
+        )
 
     df_fb = pd.DataFrame(registros)
     df_fb["_is_fallback"] = True
@@ -468,6 +679,7 @@ def _titulos_fallback() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Ponto de entrada central
 # ---------------------------------------------------------------------------
+
 
 def montar_catalogo_batalha(df_titulos: pd.DataFrame, selic_projetada: float) -> list:
     """
@@ -498,18 +710,22 @@ def montar_catalogo_batalha(df_titulos: pd.DataFrame, selic_projetada: float) ->
             taxa = selic_projetada
         elif "Prefixado" in nome:
             tipo = "pre"
-            taxa = float(row.get("taxa_compra") or 14.0)
+            _v = row.get("taxa_compra")
+            taxa = float(_v) if _v is not None and float(_v) > 0 else 14.0
         else:
             tipo = "ipca_mais"
-            taxa = float(row.get("taxa_compra") or 7.50)
+            _v = row.get("taxa_compra")
+            taxa = float(_v) if _v is not None and float(_v) > 0 else 7.50
 
-        catalogo.append({
-            "nome":       nome,
-            "tipo":       tipo,
-            "vencimento": venc,
-            "anos_total": anos,
-            "taxa":       taxa,
-        })
+        catalogo.append(
+            {
+                "nome": nome,
+                "tipo": tipo,
+                "vencimento": venc,
+                "anos_total": anos,
+                "taxa": taxa,
+            }
+        )
 
     # Complementa com títulos do TITULOS_CONFIG que não vieram no CSV
     # (ex: RendA+ não é distribuído pelo endpoint padrão do Tesouro Transparente)
@@ -522,16 +738,28 @@ def montar_catalogo_batalha(df_titulos: pd.DataFrame, selic_projetada: float) ->
             continue
         anos = round((venc - hoje).days / 365, 2)
         taxa = _TAXAS_REF.get(nome, 7.50)
-        catalogo.append({
-            "nome":       nome,
-            "tipo":       "ipca_mais",
-            "vencimento": venc,
-            "anos_total": anos,
-            "taxa":       taxa,
-        })
+        catalogo.append(
+            {
+                "nome": nome,
+                "tipo": "ipca_mais",
+                "vencimento": venc,
+                "anos_total": anos,
+                "taxa": taxa,
+            }
+        )
+
+    # Dedup por nome — CSV com entradas duplicadas não deve criar itens duplicados no catálogo
+    seen: set = set()
+    catalogo_dedup = []
+    for item in catalogo:
+        if item["nome"] not in seen:
+            seen.add(item["nome"])
+            catalogo_dedup.append(item)
 
     ordem = {"selic": 0, "pre": 1, "ipca_mais": 2}
-    return sorted(catalogo, key=lambda x: (ordem.get(x["tipo"], 3), x["vencimento"]))
+    return sorted(
+        catalogo_dedup, key=lambda x: (ordem.get(x["tipo"], 3), x["vencimento"])
+    )
 
 
 def obter_dados_completos() -> tuple[pd.DataFrame, pd.DataFrame, float]:
@@ -547,9 +775,9 @@ def obter_dados_completos() -> tuple[pd.DataFrame, pd.DataFrame, float]:
     Efeito colateral: registra `st.session_state["_status_dados"]` indicando
     se alguma fonte está usando dados de fallback (API indisponível).
     """
-    df_ipca    = buscar_ipca_bcb()
+    df_ipca = buscar_ipca_bcb()
     df_titulos = buscar_titulos_tesouro(chave_cache_mercado())
-    vna        = calcular_vna_via_bcb(df_ipca)
+    vna = calcular_vna_via_bcb(df_ipca)
 
     def _e_fallback(df: pd.DataFrame) -> bool:
         if df.empty or "_is_fallback" not in df.columns:
@@ -557,7 +785,7 @@ def obter_dados_completos() -> tuple[pd.DataFrame, pd.DataFrame, float]:
         return bool(df["_is_fallback"].iloc[0])
 
     st.session_state["_status_dados"] = {
-        "ipca_fallback":    _e_fallback(df_ipca),
+        "ipca_fallback": _e_fallback(df_ipca),
         "titulos_fallback": _e_fallback(df_titulos),
     }
 

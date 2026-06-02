@@ -10,11 +10,16 @@ Seções:
 
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 from datetime import date
 
 from core.financas import retorno_cenario_ipca, retorno_mam_antecipado, formatar_brl
-from core.dados import obter_dados_completos, CATEGORIAS_TITULOS, TITULOS_CONFIG, timestamp_ultima_atualizacao, chave_cache_mercado
+from core.dados import (
+    obter_dados_completos,
+    CATEGORIAS_TITULOS,
+    TITULOS_CONFIG,
+    timestamp_ultima_atualizacao,
+    chave_cache_mercado,
+)
 from core.graficos import (
     grafico_ipca_historico,
     grafico_cenarios,
@@ -36,11 +41,13 @@ _NOMES_CENARIOS = [
 ]
 
 # Valores padrão inspirados na metodologia de análise de MaM
-_CENARIOS_PADRAO = pd.DataFrame({
-    "Cenário":         _NOMES_CENARIOS,
-    "IPCA Futuro (%)": [9.0, 8.5, 6.5, 5.5, 5.0, 5.0, 5.0, 5.0, 5.0],
-    "Taxa IPCA+ (%)":  [9.0, 8.5, 8.0, 7.5, 7.0, 6.0, 5.0, 4.0, 3.0],
-})
+_CENARIOS_PADRAO = pd.DataFrame(
+    {
+        "Cenário": _NOMES_CENARIOS,
+        "IPCA Futuro (%)": [9.0, 8.5, 6.5, 5.5, 5.0, 5.0, 5.0, 5.0, 5.0],
+        "Taxa IPCA+ (%)": [9.0, 8.5, 8.0, 7.5, 7.0, 6.0, 5.0, 4.0, 3.0],
+    }
+)
 
 
 def _cor_retorno(val: str) -> str:
@@ -82,7 +89,7 @@ def render():
     st.markdown(
         '<p class="titulo-principal">Simulador Avançado</p>'
         '<p class="subtitulo">Cenários de inflação, estratégias de MaM, curva DI Futuro '
-        'e retrospecto histórico do IPCA no Brasil.</p>',
+        "e retrospecto histórico do IPCA no Brasil.</p>",
         unsafe_allow_html=True,
     )
 
@@ -91,7 +98,9 @@ def render():
 
     _ts = timestamp_ultima_atualizacao(chave_cache_mercado())
     if not df_titulos.empty:
-        st.caption(f"✅ Dados ao vivo · carregados às **{_ts.strftime('%H:%M')}** (atualiza a cada 2h)")
+        st.caption(
+            f"✅ Dados ao vivo · carregados às **{_ts.strftime('%H:%M')}** (atualiza a cada 2h)"
+        )
     else:
         st.caption("⚠️ Modo offline — usando dados de referência")
 
@@ -122,14 +131,18 @@ def render():
         )
 
     # Resolve dados do título antes da Row 2 para exibir métricas no mesmo grid
-    linha = df_titulos[df_titulos["nome"] == titulo] if not df_titulos.empty else pd.DataFrame()
+    linha = (
+        df_titulos[df_titulos["nome"] == titulo]
+        if not df_titulos.empty
+        else pd.DataFrame()
+    )
 
     if not linha.empty:
-        taxa_atual_pct  = float(linha["taxa_compra"].values[0])
+        taxa_atual_pct = float(linha["taxa_compra"].values[0])
         data_vencimento = date.fromisoformat(str(linha["vencimento"].values[0])[:10])
     else:
-        cfg_titulo      = TITULOS_CONFIG.get(titulo, {})
-        taxa_atual_pct  = 7.50
+        cfg_titulo = TITULOS_CONFIG.get(titulo, {})
+        taxa_atual_pct = 7.50
         data_vencimento = cfg_titulo.get("vencimento", date(2035, 5, 15))
 
     anos_restantes = max(1, round((data_vencimento - date.today()).days / 365))
@@ -140,8 +153,11 @@ def render():
     with col_val:
         valor_sim = st.number_input(
             "Capital a Simular (R$)",
-            min_value=100.0, max_value=500_000.0,
-            value=10_000.0, step=500.0, format="%.2f",
+            min_value=100.0,
+            max_value=500_000.0,
+            value=10_000.0,
+            step=500.0,
+            format="%.2f",
             key="sim_valor",
         )
 
@@ -163,19 +179,31 @@ def render():
     with col_s1:
         ipca_baixo = st.slider(
             "Inflação Baixa (IPCA % a.a.)",
-            min_value=1.0, max_value=5.0, value=3.0, step=0.1, format="%.1f%%",
+            min_value=1.0,
+            max_value=5.0,
+            value=3.0,
+            step=0.1,
+            format="%.1f%%",
             help="Cenário otimista — inflação próxima ou abaixo da meta do BCB",
             key="sim_ipca_baixo",
         )
         ipca_base = st.slider(
             "Cenário Base (IPCA % a.a.)",
-            min_value=3.0, max_value=8.0, value=4.5, step=0.1, format="%.1f%%",
+            min_value=3.0,
+            max_value=8.0,
+            value=4.5,
+            step=0.1,
+            format="%.1f%%",
             help="Cenário mais provável conforme expectativas do mercado (Focus/BCB)",
             key="sim_ipca_base",
         )
         ipca_estresse = st.slider(
             "Estresse / Hiperinflação (IPCA % a.a.)",
-            min_value=6.0, max_value=20.0, value=9.0, step=0.5, format="%.1f%%",
+            min_value=6.0,
+            max_value=20.0,
+            value=9.0,
+            step=0.5,
+            format="%.1f%%",
             help="Cenário adverso — similar a 2015 ou crises de supply chain",
             key="sim_ipca_estresse",
         )
@@ -183,10 +211,10 @@ def render():
     with col_s2:
         cenarios = {
             f"Inflação Baixa ({ipca_baixo:.1f}%)": retorno_cenario_ipca(
-                taxa_atual_pct / 100, ipca_baixo    / 100, anos_restantes, valor_sim
+                taxa_atual_pct / 100, ipca_baixo / 100, anos_restantes, valor_sim
             ),
             f"Cenário Base ({ipca_base:.1f}%)": retorno_cenario_ipca(
-                taxa_atual_pct / 100, ipca_base     / 100, anos_restantes, valor_sim
+                taxa_atual_pct / 100, ipca_base / 100, anos_restantes, valor_sim
             ),
             f"Estresse ({ipca_estresse:.1f}%)": retorno_cenario_ipca(
                 taxa_atual_pct / 100, ipca_estresse / 100, anos_restantes, valor_sim
@@ -197,13 +225,17 @@ def render():
 
         rows = []
         for nome, c in cenarios.items():
-            rows.append({
-                "Cenário":                    nome,
-                "Taxa Nominal a.a.":          f"{c['taxa_nominal_aa']:.2f}%",
-                "Valor Final":                formatar_brl(c['valor_final']),
-                "Retorno Nominal Acumulado": f"{c['retorno_nominal_pct']/100 + 1:.1f}× o capital inicial" if c['retorno_nominal_pct'] > 1000 else f"{c['retorno_nominal_pct']:.1f}%",
-                "Ganho Real ✅":              f"+{c['retorno_real_pct']:.1f}%",
-            })
+            rows.append(
+                {
+                    "Cenário": nome,
+                    "Taxa Nominal a.a.": f"{c['taxa_nominal_aa']:.2f}%",
+                    "Valor Final": formatar_brl(c["valor_final"]),
+                    "Retorno Nominal Acumulado": f"{c['retorno_nominal_pct'] / 100 + 1:.1f}× o capital inicial"
+                    if c["retorno_nominal_pct"] > 1000
+                    else f"{c['retorno_nominal_pct']:.1f}%",
+                    "Ganho Real ✅": f"+{c['retorno_real_pct']:.1f}%",
+                }
+            )
 
         st.dataframe(
             pd.DataFrame(rows),
@@ -225,7 +257,9 @@ def render():
     # -----------------------------------------------------------------------
     # 2. Simulador de MaM — Venda Antecipada
     # -----------------------------------------------------------------------
-    st.subheader(":material/show_chart:  Simulador de MaM — Estratégia de Venda Antecipada")
+    st.subheader(
+        ":material/show_chart:  Simulador de MaM — Estratégia de Venda Antecipada"
+    )
 
     with st.expander("Como funciona a estratégia de MaM?", expanded=False):
         col_exp1, col_exp2 = st.columns([3, 2])
@@ -265,22 +299,27 @@ que a taxa real mudou.
     col_m1, col_m2 = st.columns([2, 1])
 
     with col_m1:
-        titulos_validos = [t for t, cfg in TITULOS_CONFIG.items()
-                           if cfg["vencimento"] > date.today()]
+        titulos_validos = [
+            t for t, cfg in TITULOS_CONFIG.items() if cfg["vencimento"] > date.today()
+        ]
         if not titulos_validos:
             st.warning("Nenhum título com vencimento futuro disponível no catálogo.")
             ativos_sel = []
         else:
             # Se não há valor salvo, inicializa com o título atual como padrão
             _fallback = [titulo] if titulo in titulos_validos else titulos_validos[:1]
-            if "sim_ativos_sel" not in st.session_state or not st.session_state["sim_ativos_sel"]:
+            if (
+                "sim_ativos_sel" not in st.session_state
+                or not st.session_state["sim_ativos_sel"]
+            ):
                 st.session_state["sim_ativos_sel"] = _fallback
             # Filtra opções que possam ter saído da lista de títulos válidos
             else:
-                st.session_state["sim_ativos_sel"] = (
-                    [a for a in st.session_state["sim_ativos_sel"] if a in titulos_validos]
-                    or _fallback
-                )
+                st.session_state["sim_ativos_sel"] = [
+                    a
+                    for a in st.session_state["sim_ativos_sel"]
+                    if a in titulos_validos
+                ] or _fallback
             ativos_sel = st.multiselect(
                 "Ativos para Simular",
                 options=titulos_validos,
@@ -299,15 +338,24 @@ que a taxa real mudou.
         )
 
     if not ativos_sel:
-        st.warning("Selecione ao menos um ativo no campo acima para calcular os retornos de MaM.", icon="👆")
+        st.warning(
+            "Selecione ao menos um ativo no campo acima para calcular os retornos de MaM.",
+            icon="👆",
+        )
     else:
         # Metadata por ativo: T (anos até vencimento) e taxa de compra de mercado
         ativos_meta = {}
         for ativo in ativos_sel:
             cfg_a = TITULOS_CONFIG[ativo]
             t_anos = max(1, round((cfg_a["vencimento"] - date.today()).days / 365))
-            linha_a = df_titulos[df_titulos["nome"] == ativo] if not df_titulos.empty else pd.DataFrame()
-            taxa_a = float(linha_a["taxa_compra"].values[0]) if not linha_a.empty else 7.50
+            linha_a = (
+                df_titulos[df_titulos["nome"] == ativo]
+                if not df_titulos.empty
+                else pd.DataFrame()
+            )
+            taxa_a = (
+                float(linha_a["taxa_compra"].values[0]) if not linha_a.empty else 7.50
+            )
             ativos_meta[ativo] = {"t_anos": t_anos, "taxa": taxa_a}
 
         # Sumário dos ativos selecionados (até 4 colunas)
@@ -316,10 +364,15 @@ que a taxa real mudou.
             meta = ativos_meta[ativo]
             nome_curto = ativo.replace("Tesouro ", "")
             suficiente = prazo_saida < meta["t_anos"]
-            delta_str = f"T = {meta['t_anos']} anos" if suficiente else f"T = {meta['t_anos']} anos ⚠️"
+            delta_str = (
+                f"T = {meta['t_anos']} anos"
+                if suficiente
+                else f"T = {meta['t_anos']} anos ⚠️"
+            )
             help_str = (
-                None if suficiente else
-                f"Este título vence em {meta['t_anos']} ano(s), antes do prazo de saída "
+                None
+                if suficiente
+                else f"Este título vence em {meta['t_anos']} ano(s), antes do prazo de saída "
                 f"de {prazo_saida} ano(s) selecionado.\n\n"
                 f"A MaM só existe quando você vende **antes** do vencimento. Como o título "
                 f"já teria chegado ao fim do prazo, você receberia exatamente a taxa "
@@ -328,7 +381,9 @@ que a taxa real mudou.
                 f"que {meta['t_anos']} ano(s)."
             )
             with cols_meta[i]:
-                st.metric(nome_curto, f"{meta['taxa']:.2f}% a.a.", delta_str, help=help_str)
+                st.metric(
+                    nome_curto, f"{meta['taxa']:.2f}% a.a.", delta_str, help=help_str
+                )
 
         # Aviso: fórmula de MaM é aproximação para títulos com cupons semestrais
         _cupom_sel = [a for a in ativos_sel if "Juros Semestrais" in a]
@@ -358,15 +413,21 @@ que a taxa real mudou.
                     "Cenário": st.column_config.TextColumn("Cenário", width="medium"),
                     "IPCA Futuro (%)": st.column_config.NumberColumn(
                         "IPCA Futuro (contexto)",
-                        min_value=0.0, max_value=30.0, step=0.5, format="%.1f",
+                        min_value=0.0,
+                        max_value=30.0,
+                        step=0.5,
+                        format="%.1f",
                         help="Inflação projetada — contexto macroeconômico que explica a variação da taxa real. "
-                             "Não entra diretamente no cálculo (VNA cancela na fórmula).",
+                        "Não entra diretamente no cálculo (VNA cancela na fórmula).",
                     ),
                     "Taxa IPCA+ (%)": st.column_config.NumberColumn(
                         "Taxa Real na Saída (% a.a.)",
-                        min_value=0.0, max_value=30.0, step=0.5, format="%.1f",
+                        min_value=0.0,
+                        max_value=30.0,
+                        step=0.5,
+                        format="%.1f",
                         help="Yield real IPCA+ de mercado projetado no momento da venda. "
-                             "Esta é a variável que determina o ganho ou perda de MaM.",
+                        "Esta é a variável que determina o ganho ou perda de MaM.",
                     ),
                 },
             )
@@ -377,7 +438,11 @@ que a taxa real mudou.
             with _cv_col1:
                 curva_slope = st.slider(
                     "Inclinação (p.p.)",
-                    min_value=-4.0, max_value=4.0, value=0.0, step=0.25, format="%.2f",
+                    min_value=-4.0,
+                    max_value=4.0,
+                    value=0.0,
+                    step=0.25,
+                    format="%.2f",
                     help=(
                         "Define como a taxa de saída varia por prazo do título. "
                         "0 = choque paralelo (todos os prazos sobem/caem igual). "
@@ -391,9 +456,15 @@ que a taxa real mudou.
                 if abs(curva_slope) < 0.01:
                     st.info("Paralelo — mesma taxa em todos os prazos", icon="⚡")
                 elif curva_slope > 0:
-                    st.success(f"Normal — curto −{_sh:.2f}p.p. / longo +{_sh:.2f}p.p.", icon="📈")
+                    st.success(
+                        f"Normal — curto −{_sh:.2f}p.p. / longo +{_sh:.2f}p.p.",
+                        icon="📈",
+                    )
                 else:
-                    st.warning(f"Invertida — curto +{_sh:.2f}p.p. / longo −{_sh:.2f}p.p.", icon="📉")
+                    st.warning(
+                        f"Invertida — curto +{_sh:.2f}p.p. / longo −{_sh:.2f}p.p.",
+                        icon="📉",
+                    )
             st.caption(
                 "Classificação por prazo restante (T): **curto** T < 5 anos · "
                 "**médio** 5–15 anos · **longo** T > 15 anos. "
@@ -420,23 +491,23 @@ que a taxa real mudou.
                 _adj_pp = (_curva_slope / 2) * _bucket
                 valores = []
                 for _, row in df_edit.iterrows():
-                    _taxa_v = max(0.001, float(row["Taxa IPCA+ (%)"]) / 100 + _adj_pp / 100)
+                    _taxa_v = max(
+                        0.001, float(row["Taxa IPCA+ (%)"]) / 100 + _adj_pp / 100
+                    )
                     ret = retorno_mam_antecipado(
-                        taxa_compra     = taxa_c,
-                        taxa_venda      = _taxa_v,
-                        anos_saida      = float(prazo_saida),
-                        anos_vencimento = float(t),
+                        taxa_compra=taxa_c,
+                        taxa_venda=_taxa_v,
+                        anos_saida=float(prazo_saida),
+                        anos_vencimento=float(t),
                     )
                     valores.append("—" if ret != ret else f"{ret:+.2f}%")
                 resultados[nome_curto] = valores
 
-        df_result  = pd.DataFrame(resultados)
+        df_result = pd.DataFrame(resultados)
         prazo_cols = [c for c in df_result.columns if c != "Cenário"]
 
-        styled = (
-            df_result.style
-            .map(_cor_retorno, subset=prazo_cols)
-            .set_properties(subset=["Cenário"], **{"font-weight": "600"})
+        styled = df_result.style.map(_cor_retorno, subset=prazo_cols).set_properties(
+            subset=["Cenário"], **{"font-weight": "600"}
         )
 
         st.markdown(f"**Impacto de MaM por Cenário — Saída em {prazo_saida} anos:**")
@@ -454,7 +525,9 @@ que a taxa real mudou.
                 if prazo_saida < _t:
                     _bk = 1 if _t > 15 else (-1 if _t < 5 else 0)
                     _ap = (_curva_slope / 2) * _bk
-                    _label = "longo" if _bk == 1 else ("curto" if _bk == -1 else "médio")
+                    _label = (
+                        "longo" if _bk == 1 else ("curto" if _bk == -1 else "médio")
+                    )
                     _adj_parts.append(
                         f"**{_av.replace('Tesouro ', '')}** (T={_t}a, {_label}): {_ap:+.2f}p.p."
                     )
@@ -463,9 +536,13 @@ que a taxa real mudou.
 
     st.divider()
     st.subheader(":material/menu_book:  Referência de Mercado")
-    st.caption("Dados de contexto para calibrar suas simulações. Não são gerados automaticamente — insira manualmente ou consulte sua corretora.")
+    st.caption(
+        "Dados de contexto para calibrar suas simulações. Não são gerados automaticamente — insira manualmente ou consulte sua corretora."
+    )
 
-    _aba_di, _aba_ipca = st.tabs(["DI Futuro — Curva de Juros", "Retrospecto Histórico IPCA"])
+    _aba_di, _aba_ipca = st.tabs(
+        ["DI Futuro — Curva de Juros", "Retrospecto Histórico IPCA"]
+    )
 
     with _aba_di:
         with st.expander("O que é o DI Futuro e por que ele importa?", expanded=True):
@@ -509,22 +586,35 @@ Uma curva **plana ou invertida** sinaliza que o mercado espera queda de juros
 no futuro — cenário positivo para quem detém títulos longos.
                 """)
 
-        st.markdown("**Insira as taxas do DI Futuro (conforme dados mais recentes da B3):**")
+        st.markdown(
+            "**Insira as taxas do DI Futuro (conforme dados mais recentes da B3):**"
+        )
 
         vencimentos_di = ["Jan/27", "Jan/28", "Jan/29", "Jan/31", "Jan/33", "Jan/35"]
-        _di_keys       = ["sim_di_jan27", "sim_di_jan28", "sim_di_jan29",
-                          "sim_di_jan31", "sim_di_jan33", "sim_di_jan35"]
-        defaults_di    = [14.75, 14.70, 14.65, 14.55, 14.40, 14.25]
+        _di_keys = [
+            "sim_di_jan27",
+            "sim_di_jan28",
+            "sim_di_jan29",
+            "sim_di_jan31",
+            "sim_di_jan33",
+            "sim_di_jan35",
+        ]
+        defaults_di = [14.75, 14.70, 14.65, 14.55, 14.40, 14.25]
 
-        cols_di   = st.columns(len(vencimentos_di))
+        cols_di = st.columns(len(vencimentos_di))
         di_inputs = []
 
-        for col, venc, default, dk in zip(cols_di, vencimentos_di, defaults_di, _di_keys):
+        for col, venc, default, dk in zip(
+            cols_di, vencimentos_di, defaults_di, _di_keys
+        ):
             with col:
                 taxa = st.number_input(
                     f"DI {venc}",
-                    min_value=5.0, max_value=30.0,
-                    value=default, step=0.05, format="%.2f",
+                    min_value=5.0,
+                    max_value=30.0,
+                    value=default,
+                    step=0.05,
+                    format="%.2f",
                     key=dk,
                 )
                 di_inputs.append({"vencimento": venc, "taxa": taxa})
@@ -538,9 +628,9 @@ no futuro — cenário positivo para quem detém títulos longos.
         )
 
     with _aba_ipca:
-    # -----------------------------------------------------------------------
-    # 4. Retrospecto Histórico — IPCA
-    # -----------------------------------------------------------------------
+        # -------------------------------------------------------------------
+        # 4. Retrospecto Histórico — IPCA
+        # -------------------------------------------------------------------
         st.subheader(":material/history:  Retrospecto Histórico — IPCA no Brasil")
 
         col_h1, col_h2 = st.columns([3, 2])
@@ -585,151 +675,32 @@ seu poder de compra em **todos** esses cenários — é exatamente para isso que
             df_display["Mês/Ano"] = df_display["data"].dt.strftime("%b/%Y")
             df_display["IPCA (%)"] = df_display["valor"].map(lambda v: f"{v:.2f}%")
             st.dataframe(
-                df_display[["Mês/Ano", "IPCA (%)"]].sort_values("Mês/Ano", ascending=False),
+                df_display[["Mês/Ano", "IPCA (%)"]].sort_values(
+                    "Mês/Ano", ascending=False
+                ),
                 use_container_width=True,
                 hide_index=True,
                 height=300,
             )
             st.caption("Fonte: Banco Central do Brasil — SGS Série 433 (IPCA mensal).")
 
-        st.divider()
-        st.markdown("#### E se você tivesse investido?")
-        st.caption(
-            "Simulação retroativa usando o IPCA real mês a mês. "
-            "As taxas do Pré-Fixado e Selic são inseridas como médias planas — simplificação educacional."
-        )
-        _rh_c1, _rh_c2 = st.columns([1, 2])
-        with _rh_c1:
-            _rh_cap = st.number_input(
-                "Capital inicial (R$)", min_value=100.0, max_value=1_000_000.0,
-                value=st.session_state.get("sim_rh_cap", 10_000.0),
-                step=1_000.0, format="%.2f", key="sim_rh_cap",
-            )
-            _anos_disp = sorted(df_ipca["data"].dt.year.unique().tolist())
-            _rh_ano_default = st.session_state.get("sim_rh_ano") or (
-                _anos_disp[max(0, len(_anos_disp) - 6)] if _anos_disp else 2020
-            )
-            _rh_ano = st.selectbox(
-                "Início da simulação", options=_anos_disp,
-                index=_anos_disp.index(_rh_ano_default) if _rh_ano_default in _anos_disp else max(0, len(_anos_disp) - 6),
-                key="sim_rh_ano",
-            )
-            _rh_ipca_plus = st.number_input(
-                "Taxa IPCA+ real (% a.a.)", min_value=0.5, max_value=20.0,
-                value=st.session_state.get("sim_rh_ipca_plus", taxa_atual_pct),
-                step=0.05, format="%.2f", key="sim_rh_ipca_plus",
-            )
-            _rh_pre = st.number_input(
-                "Pré-Fixado (% a.a. nominal)", min_value=1.0, max_value=30.0,
-                value=st.session_state.get("sim_rh_pre", 14.5),
-                step=0.1, format="%.2f", key="sim_rh_pre",
-            )
-            _rh_selic = st.number_input(
-                "Selic média (% a.a.)", min_value=1.0, max_value=30.0,
-                value=st.session_state.get("sim_rh_selic", 14.75),
-                step=0.1, format="%.2f", key="sim_rh_selic",
-            )
-        with _rh_c2:
-            _df_rh = df_ipca[df_ipca["data"].dt.year >= _rh_ano].copy().reset_index(drop=True)
-            if len(_df_rh) < 2:
-                st.info("Selecione um ano anterior para ver a simulação com dados suficientes.")
-            else:
-                _r_real  = (1 + _rh_ipca_plus / 100) ** (1 / 12) - 1
-                _r_pre   = (1 + _rh_pre   / 100) ** (1 / 12) - 1
-                _r_sel   = (1 + _rh_selic  / 100) ** (1 / 12) - 1
-                _r_poup_m = 0.005 if _rh_selic > 8.5 else _r_sel * 0.7
-
-                _start_date = _df_rh.iloc[0]["data"] - pd.DateOffset(months=1)
-                _datas_rh   = [_start_date]
-                _v_ip = _v_pre = _v_sel = _v_poup = _v_inf = _rh_cap
-                _ip_rh, _pre_rh, _sel_rh, _poup_rh, _inf_rh = (
-                    [_rh_cap], [_rh_cap], [_rh_cap], [_rh_cap], [_rh_cap]
-                )
-
-                for _, _row in _df_rh.iterrows():
-                    _ipca_m  = _row["valor"] / 100
-                    _v_ip   *= (1 + _ipca_m) * (1 + _r_real)
-                    _v_pre  *= (1 + _r_pre)
-                    _v_sel  *= (1 + _r_sel)
-                    _v_poup *= (1 + _r_poup_m)
-                    _v_inf  *= (1 + _ipca_m)
-                    _datas_rh.append(_row["data"])
-                    _ip_rh.append(_v_ip)
-                    _pre_rh.append(_v_pre)
-                    _sel_rh.append(_v_sel)
-                    _poup_rh.append(_v_poup)
-                    _inf_rh.append(_v_inf)
-
-                _fig_rh = go.Figure()
-                _series_rh = {
-                    f"IPCA+ {_rh_ipca_plus:.1f}% real":    (_ip_rh,   "#a5d6a7", "solid"),
-                    f"Pré-Fixado {_rh_pre:.1f}%":          (_pre_rh,  "#ef9a9a", "solid"),
-                    f"Selic/CDI {_rh_selic:.1f}%":         (_sel_rh,  "#4fc3f7", "solid"),
-                    "Poupança (aprox.)":                    (_poup_rh, "#ce93d8", "dash"),
-                    "Inflação acumulada (poder de compra)": (_inf_rh,  "#718096", "dot"),
-                }
-                for _sname, (_svals, _scor, _sdash) in _series_rh.items():
-                    _fig_rh.add_trace(go.Scatter(
-                        x=_datas_rh, y=_svals, name=_sname, mode="lines",
-                        line=dict(color=_scor, width=2.0, dash=_sdash),
-                        hovertemplate=f"{_sname}: R$ %{{y:,.2f}}<extra></extra>",
-                    ))
-                _fig_rh.update_layout(
-                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                    font_color="#e0e0e0",
-                    yaxis=dict(title="Valor acumulado (R$)", tickprefix="R$ ", tickformat=",.0f",
-                               gridcolor="rgba(255,255,255,0.06)"),
-                    xaxis=dict(gridcolor="rgba(255,255,255,0.04)"),
-                    legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=-0.35),
-                    margin=dict(t=10, b=60), height=360,
-                )
-                st.plotly_chart(_fig_rh, use_container_width=True)
-
-                _n_anos_rh = len(_df_rh) / 12
-                _rh_final  = {
-                    f"IPCA+ {_rh_ipca_plus:.1f}%": _v_ip,
-                    f"Pré {_rh_pre:.1f}%":          _v_pre,
-                    f"Selic {_rh_selic:.1f}%":      _v_sel,
-                    "Poupança":                      _v_poup,
-                }
-                _venc_rh  = max(_rh_final, key=_rh_final.get)
-                _cols_rh  = st.columns(4)
-                for (_nm, _vf), _col in zip(_rh_final.items(), _cols_rh):
-                    _ganho      = (_vf / _rh_cap - 1) * 100
-                    _ganho_real = (_vf / _v_inf - 1) * 100
-                    with _col:
-                        st.metric(
-                            f"{'🏆 ' if _nm == _venc_rh else ''}{_nm}",
-                            formatar_brl(_vf),
-                            f"+{_ganho:.0f}% nominal · {_ganho_real:+.0f}% real",
-                            delta_color="normal" if _ganho_real >= 0 else "inverse",
-                        )
-                st.caption(
-                    f"Período: {_rh_ano} → {_df_rh.iloc[-1]['data'].strftime('%b/%Y')} "
-                    f"({_n_anos_rh:.1f} anos). "
-                    "IPCA real mês a mês via BCB · Selic e Pré-Fixado como taxas médias planas."
-                )
-
     # Persiste preferências do usuário para o próximo refresh
-    salvar({
-        "sim_categoria":      st.session_state.get("sim_categoria"),
-        "sim_titulo":         st.session_state.get("sim_titulo"),
-        "sim_ativos_sel":     st.session_state.get("sim_ativos_sel", []),
-        "sim_valor":          st.session_state.get("sim_valor", 10_000.0),
-        "sim_ipca_baixo":     st.session_state.get("sim_ipca_baixo", 3.0),
-        "sim_ipca_base":      st.session_state.get("sim_ipca_base", 4.5),
-        "sim_ipca_estresse":  st.session_state.get("sim_ipca_estresse", 9.0),
-        "sim_prazo_saida":    st.session_state.get("sim_prazo_saida", 3),
-        "sim_curva_slope":    st.session_state.get("sim_curva_slope", 0.0),
-        "sim_di_jan27":       st.session_state.get("sim_di_jan27", 14.75),
-        "sim_di_jan28":       st.session_state.get("sim_di_jan28", 14.70),
-        "sim_di_jan29":       st.session_state.get("sim_di_jan29", 14.65),
-        "sim_di_jan31":       st.session_state.get("sim_di_jan31", 14.55),
-        "sim_di_jan33":       st.session_state.get("sim_di_jan33", 14.40),
-        "sim_di_jan35":       st.session_state.get("sim_di_jan35", 14.25),
-        "sim_rh_cap":         st.session_state.get("sim_rh_cap",         10_000.0),
-        "sim_rh_pre":         st.session_state.get("sim_rh_pre",         14.5),
-        "sim_rh_selic":       st.session_state.get("sim_rh_selic",       14.75),
-        "sim_rh_ipca_plus":   st.session_state.get("sim_rh_ipca_plus",   taxa_atual_pct),
-        "sim_rh_ano":         st.session_state.get("sim_rh_ano",         None),
-    })
+    salvar(
+        {
+            "sim_categoria": st.session_state.get("sim_categoria"),
+            "sim_titulo": st.session_state.get("sim_titulo"),
+            "sim_ativos_sel": st.session_state.get("sim_ativos_sel", []),
+            "sim_valor": st.session_state.get("sim_valor", 10_000.0),
+            "sim_ipca_baixo": st.session_state.get("sim_ipca_baixo", 3.0),
+            "sim_ipca_base": st.session_state.get("sim_ipca_base", 4.5),
+            "sim_ipca_estresse": st.session_state.get("sim_ipca_estresse", 9.0),
+            "sim_prazo_saida": st.session_state.get("sim_prazo_saida", 3),
+            "sim_curva_slope": st.session_state.get("sim_curva_slope", 0.0),
+            "sim_di_jan27": st.session_state.get("sim_di_jan27", 14.75),
+            "sim_di_jan28": st.session_state.get("sim_di_jan28", 14.70),
+            "sim_di_jan29": st.session_state.get("sim_di_jan29", 14.65),
+            "sim_di_jan31": st.session_state.get("sim_di_jan31", 14.55),
+            "sim_di_jan33": st.session_state.get("sim_di_jan33", 14.40),
+            "sim_di_jan35": st.session_state.get("sim_di_jan35", 14.25),
+        }
+    )

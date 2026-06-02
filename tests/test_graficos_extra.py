@@ -23,14 +23,17 @@ from core.graficos import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _df_paradoxo(n=20):
     # Datas 2020-2021 (passadas) — "Hoje" (2026) fica fora do range
     datas = pd.date_range("2020-01-01", periods=n, freq="MS")
-    return pd.DataFrame({
-        "data":    datas,
-        "mam":     [100.0 - i * 0.5 for i in range(n)],
-        "carrego": [100.0 + i * 0.5 for i in range(n)],
-    })
+    return pd.DataFrame(
+        {
+            "data": datas,
+            "mam": [100.0 - i * 0.5 for i in range(n)],
+            "carrego": [100.0 + i * 0.5 for i in range(n)],
+        }
+    )
 
 
 def _df_paradoxo_com_hoje(n=30):
@@ -38,11 +41,13 @@ def _df_paradoxo_com_hoje(n=30):
     hoje = pd.Timestamp.today().normalize()
     inicio = hoje - pd.DateOffset(months=6)
     datas = pd.date_range(inicio, periods=n, freq="MS")
-    return pd.DataFrame({
-        "data":    datas,
-        "mam":     [100.0 - i * 0.5 for i in range(n)],
-        "carrego": [100.0 + i * 0.5 for i in range(n)],
-    })
+    return pd.DataFrame(
+        {
+            "data": datas,
+            "mam": [100.0 - i * 0.5 for i in range(n)],
+            "carrego": [100.0 + i * 0.5 for i in range(n)],
+        }
+    )
 
 
 def _df_ipca_historico():
@@ -69,30 +74,62 @@ def _df_ipca_com_marcos():
 def _analises_batalha():
     return [
         {"nome": "Tesouro IPCA+ 2035", "ret_adv": 5.0, "ret_neu": 8.0, "ret_fav": 12.0},
-        {"nome": "Tesouro Selic 2031",  "ret_adv": 12.0, "ret_neu": 13.0, "ret_fav": 14.0},
+        {
+            "nome": "Tesouro Selic 2031",
+            "ret_adv": 12.0,
+            "ret_neu": 13.0,
+            "ret_fav": 14.0,
+        },
     ]
 
 
 def _analises_markowitz():
     return [
-        {"nome": "Tesouro IPCA+ 2035",    "tipo": "ipca_mais", "risco_std": 2.0,
-         "ret_neu": 8.0, "ret_adv": 5.0, "ret_fav": 12.0, "risco_label": "Média"},
-        {"nome": "Tesouro Selic 2031",     "tipo": "selic",     "risco_std": 0.0,
-         "ret_neu": 13.0, "ret_adv": 12.0, "ret_fav": 14.0, "risco_label": "Nenhuma"},
-        {"nome": "Tesouro Prefixado 2029", "tipo": "pre",       "risco_std": 1.5,
-         "ret_neu": 10.0, "ret_adv": 7.0, "ret_fav": 14.0, "risco_label": "Baixa"},
+        {
+            "nome": "Tesouro IPCA+ 2035",
+            "tipo": "ipca_mais",
+            "risco_std": 2.0,
+            "ret_neu": 8.0,
+            "ret_adv": 5.0,
+            "ret_fav": 12.0,
+            "risco_label": "Média",
+        },
+        {
+            "nome": "Tesouro Selic 2031",
+            "tipo": "selic",
+            "risco_std": 0.0,
+            "ret_neu": 13.0,
+            "ret_adv": 12.0,
+            "ret_fav": 14.0,
+            "risco_label": "Nenhuma",
+        },
+        {
+            "nome": "Tesouro Prefixado 2029",
+            "tipo": "pre",
+            "risco_std": 1.5,
+            "ret_neu": 10.0,
+            "ret_adv": 7.0,
+            "ret_fav": 14.0,
+            "risco_label": "Baixa",
+        },
     ]
 
 
 def _resultados_horizonte(reinvest=False):
-    a = {"nome": "Tesouro IPCA+ 2035",
-         "ret_adv": 5.0, "ret_neu": 8.0, "ret_fav": 12.0, "reinvest": reinvest}
+    a = {
+        "nome": "Tesouro IPCA+ 2035",
+        "ret_adv": 5.0,
+        "ret_neu": 8.0,
+        "ret_fav": 12.0,
+        "reinvest": reinvest,
+    }
     return {3: [a], 5: [a], 10: [a]}
 
 
 # ---------------------------------------------------------------------------
 # grafico_paradoxo
 # ---------------------------------------------------------------------------
+
 
 class TestGraficoParadoxo:
     def test_retorna_figure(self):
@@ -154,6 +191,7 @@ class TestGraficoParadoxo:
 # grafico_ipca_historico
 # ---------------------------------------------------------------------------
 
+
 class TestGraficoIpcaHistorico:
     def test_retorna_figure(self):
         assert isinstance(grafico_ipca_historico(_df_ipca_historico()), go.Figure)
@@ -189,6 +227,7 @@ class TestGraficoIpcaHistorico:
 # grafico_curva_di
 # ---------------------------------------------------------------------------
 
+
 class TestGraficoCurvaDi:
     _dados = [
         {"vencimento": "Jan/27", "taxa": 14.50},
@@ -216,6 +255,7 @@ class TestGraficoCurvaDi:
 # grafico_cenarios_batalha
 # ---------------------------------------------------------------------------
 
+
 class TestGraficoCenariosBatalha:
     def test_retorna_figure(self):
         assert isinstance(grafico_cenarios_batalha(_analises_batalha()), go.Figure)
@@ -227,13 +267,20 @@ class TestGraficoCenariosBatalha:
             assert isinstance(trace, go.Bar)
 
     def test_adverso_e_vermelho(self):
-        assert grafico_cenarios_batalha(_analises_batalha()).data[0].marker.color == VERMELHO
+        assert (
+            grafico_cenarios_batalha(_analises_batalha()).data[0].marker.color
+            == VERMELHO
+        )
 
     def test_neutro_e_azul(self):
-        assert grafico_cenarios_batalha(_analises_batalha()).data[1].marker.color == AZUL
+        assert (
+            grafico_cenarios_batalha(_analises_batalha()).data[1].marker.color == AZUL
+        )
 
     def test_favoravel_e_verde(self):
-        assert grafico_cenarios_batalha(_analises_batalha()).data[2].marker.color == VERDE
+        assert (
+            grafico_cenarios_batalha(_analises_batalha()).data[2].marker.color == VERDE
+        )
 
     def test_nomes_curtos_sem_prefixo_tesouro(self):
         fig = grafico_cenarios_batalha(_analises_batalha())
@@ -243,6 +290,7 @@ class TestGraficoCenariosBatalha:
 # ---------------------------------------------------------------------------
 # grafico_markowitz
 # ---------------------------------------------------------------------------
+
 
 class TestGraficoMarkowitz:
     def test_retorna_figure(self):
@@ -263,11 +311,11 @@ class TestGraficoMarkowitz:
     def test_com_carteira_mix_adiciona_trace_estrela(self):
         mix = {
             "nome_principal": "Tesouro IPCA+ 2035",
-            "nome_liquida":   "Tesouro Selic 2031",
+            "nome_liquida": "Tesouro Selic 2031",
             "peso_principal": 0.70,
-            "peso_liquida":   0.30,
+            "peso_liquida": 0.30,
             "risco_std": 1.4,
-            "ret_neu":   9.5,
+            "ret_neu": 9.5,
         }
         fig = grafico_markowitz(_analises_markowitz(), carteira_mix=mix)
         nomes = [t.name for t in fig.data if t.name]
@@ -284,9 +332,12 @@ class TestGraficoMarkowitz:
 # grafico_retorno_por_horizonte
 # ---------------------------------------------------------------------------
 
+
 class TestGraficoRetornoPorHorizonte:
     def test_retorna_figure(self):
-        assert isinstance(grafico_retorno_por_horizonte(_resultados_horizonte(), 5), go.Figure)
+        assert isinstance(
+            grafico_retorno_por_horizonte(_resultados_horizonte(), 5), go.Figure
+        )
 
     def test_dict_vazio_retorna_figure_sem_traces(self):
         fig = grafico_retorno_por_horizonte({}, 5)
@@ -298,12 +349,20 @@ class TestGraficoRetornoPorHorizonte:
         assert len(fig.data) >= 1
 
     def test_com_reinvest_adiciona_linha_tracejada(self):
-        a = {"nome": "Tesouro IPCA+ 2030",
-             "ret_adv": 4.0, "ret_neu": 7.0, "ret_fav": 10.0, "reinvest": True}
+        a = {
+            "nome": "Tesouro IPCA+ 2030",
+            "ret_adv": 4.0,
+            "ret_neu": 7.0,
+            "ret_fav": 10.0,
+            "reinvest": True,
+        }
         resultados = {3: [a], 5: [a]}
         fig = grafico_retorno_por_horizonte(resultados, 5)
-        dash_styles = [t.line.dash for t in fig.data
-                       if hasattr(t, "line") and t.line and t.line.dash]
+        dash_styles = [
+            t.line.dash
+            for t in fig.data
+            if hasattr(t, "line") and t.line and t.line.dash
+        ]
         assert any(d == "dot" for d in dash_styles)
 
     def test_horizonte_atual_gera_vline(self):
@@ -311,19 +370,37 @@ class TestGraficoRetornoPorHorizonte:
         assert len(fig.layout.shapes) >= 1
 
     def test_bridge_feito_ao_transicionar_carrego_para_reinvest(self):
-        a_c = {"nome": "Tesouro IPCA+ 2030",
-               "ret_adv": 5.0, "ret_neu": 7.0, "ret_fav": 10.0, "reinvest": False}
-        a_r = {"nome": "Tesouro IPCA+ 2030",
-               "ret_adv": 6.0, "ret_neu": 8.0, "ret_fav": 11.0, "reinvest": True}
+        a_c = {
+            "nome": "Tesouro IPCA+ 2030",
+            "ret_adv": 5.0,
+            "ret_neu": 7.0,
+            "ret_fav": 10.0,
+            "reinvest": False,
+        }
+        a_r = {
+            "nome": "Tesouro IPCA+ 2030",
+            "ret_adv": 6.0,
+            "ret_neu": 8.0,
+            "ret_fav": 11.0,
+            "reinvest": True,
+        }
         resultados = {3: [a_c], 5: [a_r], 10: [a_r]}
         fig = grafico_retorno_por_horizonte(resultados, 5)
-        dashes = [t.line.dash for t in fig.data
-                  if hasattr(t, "line") and t.line and t.line.dash is not None]
+        dashes = [
+            t.line.dash
+            for t in fig.data
+            if hasattr(t, "line") and t.line and t.line.dash is not None
+        ]
         assert any(d == "dot" for d in dashes)
 
     def test_nome_sem_resultado_em_horizonte_e_ignorado(self):
-        a = {"nome": "Tesouro IPCA+ 2035",
-             "ret_adv": 5.0, "ret_neu": 8.0, "ret_fav": 12.0, "reinvest": False}
+        a = {
+            "nome": "Tesouro IPCA+ 2035",
+            "ret_adv": 5.0,
+            "ret_neu": 8.0,
+            "ret_fav": 12.0,
+            "reinvest": False,
+        }
         resultados = {5: [a], 10: []}
         fig = grafico_retorno_por_horizonte(resultados, 5)
         assert isinstance(fig, go.Figure)

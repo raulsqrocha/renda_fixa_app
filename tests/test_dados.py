@@ -12,6 +12,7 @@ from core.dados import (
     buscar_selic_na_data,
     buscar_titulos_tesouro,
     construir_nome_titulo,
+    _get_com_retry,
     _ipca_fallback,
     _TAXAS_REF,
     _titulos_fallback,
@@ -29,6 +30,7 @@ from core.dados import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _mk_ipca(valores, start="2015-01-01"):
     datas = pd.date_range(start, periods=len(valores), freq="MS")
     return pd.DataFrame({"data": datas, "valor": list(valores), "_is_fallback": False})
@@ -37,6 +39,7 @@ def _mk_ipca(valores, start="2015-01-01"):
 # ---------------------------------------------------------------------------
 # _ipca_fallback
 # ---------------------------------------------------------------------------
+
 
 class TestIpcaFallback:
     def test_retorna_dataframe(self):
@@ -48,14 +51,14 @@ class TestIpcaFallback:
     def test_is_fallback_true(self):
         assert _ipca_fallback()["_is_fallback"].all()
 
-    def test_137_meses(self):
-        assert len(_ipca_fallback()) == 137
+    def test_138_meses(self):
+        assert len(_ipca_fallback()) == 138
 
     def test_inicio_jan2015(self):
         assert _ipca_fallback()["data"].iloc[0] == pd.Timestamp("2015-01-01")
 
-    def test_fim_mai2026(self):
-        assert _ipca_fallback()["data"].iloc[-1] == pd.Timestamp("2026-05-01")
+    def test_fim_jun2026(self):
+        assert _ipca_fallback()["data"].iloc[-1] == pd.Timestamp("2026-06-01")
 
     def test_valores_numericos(self):
         assert pd.api.types.is_float_dtype(_ipca_fallback()["valor"])
@@ -65,8 +68,17 @@ class TestIpcaFallback:
 # _titulos_fallback
 # ---------------------------------------------------------------------------
 
+
 class TestTitulosFallback:
-    _COLS = {"nome", "vencimento", "taxa_compra", "taxa_venda", "pu_compra", "pu_venda", "_is_fallback"}
+    _COLS = {
+        "nome",
+        "vencimento",
+        "taxa_compra",
+        "taxa_venda",
+        "pu_compra",
+        "pu_venda",
+        "_is_fallback",
+    }
 
     def test_retorna_dataframe(self):
         assert isinstance(_titulos_fallback(), pd.DataFrame)
@@ -98,9 +110,11 @@ class TestTitulosFallback:
 # calcular_vna_via_bcb
 # ---------------------------------------------------------------------------
 
+
 class TestCalcularVnaViaBcb:
     def test_sem_dados_pos2015_retorna_fallback(self):
         from core.dados import VNA_FALLBACK
+
         df = _mk_ipca([1.0], start="2014-01-01")
         assert calcular_vna_via_bcb(df) == VNA_FALLBACK
 
@@ -121,6 +135,7 @@ class TestCalcularVnaViaBcb:
 # calcular_vna_em_data
 # ---------------------------------------------------------------------------
 
+
 class TestCalcularVnaEmData:
     def test_antes_jan2015_retorna_base(self):
         df = _ipca_fallback()
@@ -128,7 +143,9 @@ class TestCalcularVnaEmData:
 
     def test_jan2015_acumula_um_mes(self):
         df = _mk_ipca([1.0])
-        assert calcular_vna_em_data(df, date(2015, 1, 31)) == round(VNA_BASE_DEZ2014 * 1.01, 2)
+        assert calcular_vna_em_data(df, date(2015, 1, 31)) == round(
+            VNA_BASE_DEZ2014 * 1.01, 2
+        )
 
     def test_fev2015_acumula_dois_meses(self):
         df = _mk_ipca([1.0, 2.0])
@@ -146,18 +163,28 @@ class TestCalcularVnaEmData:
 # construir_nome_titulo
 # ---------------------------------------------------------------------------
 
+
 class TestConstruirNomeTitulo:
     def test_ipca_principal(self):
         assert construir_nome_titulo("Tesouro IPCA+", 2032) == "Tesouro IPCA+ 2032"
 
     def test_ipca_juros_semestrais(self):
-        assert construir_nome_titulo("Tesouro IPCA+ com Juros Semestrais", 2037) == "Tesouro IPCA+ com Juros Semestrais 2037"
+        assert (
+            construir_nome_titulo("Tesouro IPCA+ com Juros Semestrais", 2037)
+            == "Tesouro IPCA+ com Juros Semestrais 2037"
+        )
 
     def test_renda_mais_variante_renda(self):
-        assert construir_nome_titulo("Tesouro Renda+ Aposentadoria Extra", 2035) == "Tesouro RendA+ 2035"
+        assert (
+            construir_nome_titulo("Tesouro Renda+ Aposentadoria Extra", 2035)
+            == "Tesouro RendA+ 2035"
+        )
 
     def test_renda_mais_variante_renda_maiusculo(self):
-        assert construir_nome_titulo("Tesouro RendA+ Aposentadoria Extra", 2035) == "Tesouro RendA+ 2035"
+        assert (
+            construir_nome_titulo("Tesouro RendA+ Aposentadoria Extra", 2035)
+            == "Tesouro RendA+ 2035"
+        )
 
     def test_educa_mais(self):
         assert construir_nome_titulo("Tesouro Educa+", 2030) == "Tesouro Educar+ 2030"
@@ -166,7 +193,9 @@ class TestConstruirNomeTitulo:
         assert construir_nome_titulo("Tesouro Selic", 2031) == "Tesouro Selic 2031"
 
     def test_prefixado(self):
-        assert construir_nome_titulo("Tesouro Prefixado", 2029) == "Tesouro Prefixado 2029"
+        assert (
+            construir_nome_titulo("Tesouro Prefixado", 2029) == "Tesouro Prefixado 2029"
+        )
 
     def test_prefixado_juros_semestrais(self):
         assert (
@@ -185,34 +214,37 @@ class TestConstruirNomeTitulo:
 # montar_catalogo_batalha
 # ---------------------------------------------------------------------------
 
+
 class TestMontarCatalogoBatalha:
     def _df(self):
-        return pd.DataFrame([
-            {
-                "nome": "Tesouro Selic 2031",
-                "vencimento": "2031-03-01",
-                "taxa_compra": 14.75,
-                "taxa_venda": 14.77,
-                "pu_compra": 0.0,
-                "pu_venda": 0.0,
-            },
-            {
-                "nome": "Tesouro Prefixado 2029",
-                "vencimento": "2029-01-01",
-                "taxa_compra": 14.50,
-                "taxa_venda": 14.52,
-                "pu_compra": 800.0,
-                "pu_venda": 798.0,
-            },
-            {
-                "nome": "Tesouro IPCA+ 2032",
-                "vencimento": "2032-08-15",
-                "taxa_compra": 7.75,
-                "taxa_venda": 7.78,
-                "pu_compra": 3000.0,
-                "pu_venda": 2990.0,
-            },
-        ])
+        return pd.DataFrame(
+            [
+                {
+                    "nome": "Tesouro Selic 2031",
+                    "vencimento": "2031-03-01",
+                    "taxa_compra": 14.75,
+                    "taxa_venda": 14.77,
+                    "pu_compra": 0.0,
+                    "pu_venda": 0.0,
+                },
+                {
+                    "nome": "Tesouro Prefixado 2029",
+                    "vencimento": "2029-01-01",
+                    "taxa_compra": 14.50,
+                    "taxa_venda": 14.52,
+                    "pu_compra": 800.0,
+                    "pu_venda": 798.0,
+                },
+                {
+                    "nome": "Tesouro IPCA+ 2032",
+                    "vencimento": "2032-08-15",
+                    "taxa_compra": 7.75,
+                    "taxa_venda": 7.78,
+                    "pu_compra": 3000.0,
+                    "pu_venda": 2990.0,
+                },
+            ]
+        )
 
     def test_retorna_lista_nao_vazia(self):
         cat = montar_catalogo_batalha(self._df(), 14.75)
@@ -234,14 +266,18 @@ class TestMontarCatalogoBatalha:
 
     def test_exclui_titulo_vencendo_em_20_dias(self):
         venc_proximo = (date.today() + timedelta(days=20)).isoformat()
-        df = pd.DataFrame([{
-            "nome": "Tesouro IPCA+ 2025",
-            "vencimento": venc_proximo,
-            "taxa_compra": 7.0,
-            "taxa_venda": 7.03,
-            "pu_compra": 100.0,
-            "pu_venda": 99.5,
-        }])
+        df = pd.DataFrame(
+            [
+                {
+                    "nome": "Tesouro IPCA+ 2025",
+                    "vencimento": venc_proximo,
+                    "taxa_compra": 7.0,
+                    "taxa_venda": 7.03,
+                    "pu_compra": 100.0,
+                    "pu_venda": 99.5,
+                }
+            ]
+        )
         cat = montar_catalogo_batalha(df, 14.75)
         assert "Tesouro IPCA+ 2025" not in {t["nome"] for t in cat}
 
@@ -249,6 +285,7 @@ class TestMontarCatalogoBatalha:
 # ---------------------------------------------------------------------------
 # chave_cache_mercado
 # ---------------------------------------------------------------------------
+
 
 class TestChaveCacheMercado:
     def test_retorna_string(self):
@@ -275,8 +312,100 @@ class TestChaveCacheMercado:
 
 
 # ---------------------------------------------------------------------------
+# _get_com_retry
+# ---------------------------------------------------------------------------
+
+
+class TestGetComRetry:
+    def test_sucesso_na_primeira_tentativa(self):
+        mock_resp = MagicMock()
+        with patch("core.dados.requests.get", return_value=mock_resp) as mock_get:
+            r = _get_com_retry("http://x", timeout=5)
+        assert r is mock_resp
+        assert mock_get.call_count == 1
+
+    def test_falha_e_retenta_ate_sucesso(self):
+        mock_resp = MagicMock()
+        with (
+            patch(
+                "core.dados.requests.get", side_effect=[ConnectionError(), mock_resp]
+            ) as mock_get,
+            patch("core.dados.time.sleep"),
+        ):
+            r = _get_com_retry("http://x", timeout=5)
+        assert r is mock_resp
+        assert mock_get.call_count == 2
+
+    def test_todas_tentativas_falham_propaga_excecao(self):
+        with (
+            patch("core.dados.requests.get", side_effect=ConnectionError("erro")),
+            patch("core.dados.time.sleep"),
+        ):
+            try:
+                _get_com_retry("http://x", timeout=5, tentativas=3)
+                assert False, "deveria ter lançado exceção"
+            except ConnectionError:
+                pass
+
+    def test_sleep_entre_tentativas(self):
+        mock_resp = MagicMock()
+        with (
+            patch(
+                "core.dados.requests.get", side_effect=[ConnectionError(), mock_resp]
+            ),
+            patch("core.dados.time.sleep") as mock_sleep,
+        ):
+            _get_com_retry("http://x", timeout=5)
+        mock_sleep.assert_called_once_with(0.5)
+
+    def test_sem_sleep_na_primeira_tentativa(self):
+        with (
+            patch("core.dados.requests.get", return_value=MagicMock()),
+            patch("core.dados.time.sleep") as mock_sleep,
+        ):
+            _get_com_retry("http://x", timeout=5)
+        mock_sleep.assert_not_called()
+
+    def test_erro_4xx_nao_retenta(self):
+        from requests.exceptions import HTTPError
+
+        mock_resp_404 = MagicMock()
+        mock_resp_404.status_code = 404
+        err = HTTPError("404", response=mock_resp_404)
+        with patch("core.dados.requests.get") as mock_get:
+            mock_get.return_value.raise_for_status.side_effect = err
+            try:
+                _get_com_retry("http://x", timeout=5)
+            except HTTPError:
+                pass
+        # Deve ter tentado apenas 1 vez (sem retry para 4xx)
+        assert mock_get.call_count == 1
+
+    def test_erro_503_retenta(self):
+        from requests.exceptions import HTTPError
+
+        mock_resp_503 = MagicMock()
+        mock_resp_503.status_code = 503
+        err_503 = HTTPError("503", response=mock_resp_503)
+        mock_ok = MagicMock()
+        mock_ok.raise_for_status.return_value = None
+
+        calls = [MagicMock(), mock_ok]
+        calls[0].raise_for_status.side_effect = err_503
+
+        with (
+            patch("core.dados.requests.get", side_effect=calls),
+            patch("core.dados.time.sleep") as mock_sleep,
+        ):
+            r = _get_com_retry("http://x", timeout=5)
+        assert r is mock_ok
+        mock_sleep.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # buscar_selic_meta_bcb
 # ---------------------------------------------------------------------------
+
 
 class TestBuscarSelicMetaBcb:
     def test_sucesso_retorna_valor_api(self):
@@ -299,6 +428,7 @@ class TestBuscarSelicMetaBcb:
 # ---------------------------------------------------------------------------
 # buscar_selic_na_data
 # ---------------------------------------------------------------------------
+
 
 class TestBuscarSelicNaData:
     def test_sucesso_retorna_ultimo_valor(self):
@@ -324,6 +454,7 @@ class TestBuscarSelicNaData:
 # ---------------------------------------------------------------------------
 # buscar_ipca_bcb
 # ---------------------------------------------------------------------------
+
 
 class TestBuscarIpcaBcb:
     _COLS = {"data", "valor", "_is_fallback"}
@@ -359,7 +490,15 @@ _CSV_TESOURO = (
     "Tesouro Prefixado;01/01/2029;26/05/2026;14,50;14,52;800,00;798,00\n"
 )
 
-_COLS_TITULOS = {"nome", "vencimento", "taxa_compra", "taxa_venda", "pu_compra", "pu_venda", "_is_fallback"}
+_COLS_TITULOS = {
+    "nome",
+    "vencimento",
+    "taxa_compra",
+    "taxa_venda",
+    "pu_compra",
+    "pu_venda",
+    "_is_fallback",
+}
 
 
 class TestBuscarTitulosTesouro:
@@ -458,6 +597,7 @@ class TestBuscarTitulosTesouro:
 # _titulos_fallback — ramos de vencimento expirado
 # ---------------------------------------------------------------------------
 
+
 class TestTitulosFallbackVencimentoExpirado:
     def test_titulos_config_expirados_sao_pulados(self):
         # Cobre linhas 432 e 450: quando todos os títulos já venceram (data far future),
@@ -481,14 +621,25 @@ class TestTitulosFallbackVencimentoExpirado:
 # montar_catalogo_batalha — ramos de exceção e filtro de prazo
 # ---------------------------------------------------------------------------
 
+
 class TestMontarCatalogoBatalhaExtras:
     def test_vencimento_invalido_no_df_pula_linha(self):
         # Cobre linhas 486-487: date.fromisoformat falha em string corrompida →
         # except Exception: continue (linha é pulada sem explodir).
-        df = pd.DataFrame([
-            {"nome": "Tesouro Selic 2031",   "vencimento": "invalid-date", "taxa_compra": 14.75},
-            {"nome": "Tesouro IPCA+ 2032",   "vencimento": "2032-08-15",   "taxa_compra": 7.50},
-        ])
+        df = pd.DataFrame(
+            [
+                {
+                    "nome": "Tesouro Selic 2031",
+                    "vencimento": "invalid-date",
+                    "taxa_compra": 14.75,
+                },
+                {
+                    "nome": "Tesouro IPCA+ 2032",
+                    "vencimento": "2032-08-15",
+                    "taxa_compra": 7.50,
+                },
+            ]
+        )
         cat = montar_catalogo_batalha(df, 14.75)
         nomes = {t["nome"] for t in cat}
         assert "Tesouro IPCA+ 2032" in nomes
@@ -516,9 +667,11 @@ class TestMontarCatalogoBatalhaExtras:
 # timestamp_ultima_atualizacao
 # ---------------------------------------------------------------------------
 
+
 class TestTimestampUltimaAtualizacao:
     def test_retorna_datetime(self):
         from datetime import datetime
+
         result = timestamp_ultima_atualizacao("chave_qualquer")
         assert isinstance(result, datetime)
 
@@ -531,28 +684,42 @@ class TestTimestampUltimaAtualizacao:
 # obter_dados_completos
 # ---------------------------------------------------------------------------
 
+
 class TestObterDadosCompletos:
     """Cobre linhas 548-562: orquestração de dados + registro de status no session_state."""
 
     def _df_ipca(self):
         datas = pd.date_range("2015-01-01", periods=3, freq="MS")
-        return pd.DataFrame({"data": datas, "valor": [0.5, 0.5, 0.5], "_is_fallback": False})
+        return pd.DataFrame(
+            {"data": datas, "valor": [0.5, 0.5, 0.5], "_is_fallback": False}
+        )
 
     def _df_titulos(self):
-        return pd.DataFrame([{
-            "nome": "Tesouro Selic 2031", "vencimento": "2031-03-01",
-            "taxa_compra": 14.75, "taxa_venda": 14.77,
-            "pu_compra": 0.0, "pu_venda": 0.0, "_is_fallback": False,
-        }])
+        return pd.DataFrame(
+            [
+                {
+                    "nome": "Tesouro Selic 2031",
+                    "vencimento": "2031-03-01",
+                    "taxa_compra": 14.75,
+                    "taxa_venda": 14.77,
+                    "pu_compra": 0.0,
+                    "pu_venda": 0.0,
+                    "_is_fallback": False,
+                }
+            ]
+        )
 
     def test_retorna_tupla_de_tres_elementos(self):
         from core.dados import obter_dados_completos
         import core.dados as _dm
+
         df_i = self._df_ipca()
         df_t = self._df_titulos()
-        with patch.object(_dm, "buscar_ipca_bcb",         return_value=df_i), \
-             patch.object(_dm, "buscar_titulos_tesouro",  return_value=df_t), \
-             patch.object(_dm, "chave_cache_mercado",     return_value="chave"):
+        with (
+            patch.object(_dm, "buscar_ipca_bcb", return_value=df_i),
+            patch.object(_dm, "buscar_titulos_tesouro", return_value=df_t),
+            patch.object(_dm, "chave_cache_mercado", return_value="chave"),
+        ):
             resultado = obter_dados_completos()
         assert len(resultado) == 3
         assert isinstance(resultado[0], pd.DataFrame)
@@ -562,24 +729,30 @@ class TestObterDadosCompletos:
     def test_vna_positivo(self):
         from core.dados import obter_dados_completos
         import core.dados as _dm
+
         df_i = self._df_ipca()
         df_t = self._df_titulos()
-        with patch.object(_dm, "buscar_ipca_bcb",         return_value=df_i), \
-             patch.object(_dm, "buscar_titulos_tesouro",  return_value=df_t), \
-             patch.object(_dm, "chave_cache_mercado",     return_value="chave"):
+        with (
+            patch.object(_dm, "buscar_ipca_bcb", return_value=df_i),
+            patch.object(_dm, "buscar_titulos_tesouro", return_value=df_t),
+            patch.object(_dm, "chave_cache_mercado", return_value="chave"),
+        ):
             _, _, vna = obter_dados_completos()
         assert vna > 0
 
     def test_fallback_detectado_quando_is_fallback_true(self):
         from core.dados import obter_dados_completos
         import core.dados as _dm
+
         df_i = self._df_ipca().assign(_is_fallback=True)
         df_t = self._df_titulos().assign(_is_fallback=True)
         session: dict = {}
-        with patch.object(_dm, "buscar_ipca_bcb",         return_value=df_i), \
-             patch.object(_dm, "buscar_titulos_tesouro",  return_value=df_t), \
-             patch.object(_dm, "chave_cache_mercado",     return_value="chave"), \
-             patch.object(_dm.st, "session_state",        session):
+        with (
+            patch.object(_dm, "buscar_ipca_bcb", return_value=df_i),
+            patch.object(_dm, "buscar_titulos_tesouro", return_value=df_t),
+            patch.object(_dm, "chave_cache_mercado", return_value="chave"),
+            patch.object(_dm.st, "session_state", session),
+        ):
             obter_dados_completos()
         assert session["_status_dados"]["ipca_fallback"] is True
         assert session["_status_dados"]["titulos_fallback"] is True
@@ -587,13 +760,16 @@ class TestObterDadosCompletos:
     def test_fallback_false_quando_api_ok(self):
         from core.dados import obter_dados_completos
         import core.dados as _dm
+
         df_i = self._df_ipca()
         df_t = self._df_titulos()
         session: dict = {}
-        with patch.object(_dm, "buscar_ipca_bcb",         return_value=df_i), \
-             patch.object(_dm, "buscar_titulos_tesouro",  return_value=df_t), \
-             patch.object(_dm, "chave_cache_mercado",     return_value="chave"), \
-             patch.object(_dm.st, "session_state",        session):
+        with (
+            patch.object(_dm, "buscar_ipca_bcb", return_value=df_i),
+            patch.object(_dm, "buscar_titulos_tesouro", return_value=df_t),
+            patch.object(_dm, "chave_cache_mercado", return_value="chave"),
+            patch.object(_dm.st, "session_state", session),
+        ):
             obter_dados_completos()
         assert session["_status_dados"]["ipca_fallback"] is False
         assert session["_status_dados"]["titulos_fallback"] is False
@@ -603,21 +779,26 @@ class TestObterDadosCompletos:
         # está nas colunas do DataFrame (guarda defensiva dentro da função).
         from core.dados import obter_dados_completos
         import core.dados as _dm
+
         # DataFrames sem coluna _is_fallback → _e_fallback vai pelo return False
         df_i = self._df_ipca().drop(columns=["_is_fallback"])
         df_t = self._df_titulos().drop(columns=["_is_fallback"])
         session: dict = {}
-        with patch.object(_dm, "buscar_ipca_bcb",         return_value=df_i), \
-             patch.object(_dm, "buscar_titulos_tesouro",  return_value=df_t), \
-             patch.object(_dm, "chave_cache_mercado",     return_value="chave"), \
-             patch.object(_dm.st, "session_state",        session):
+        with (
+            patch.object(_dm, "buscar_ipca_bcb", return_value=df_i),
+            patch.object(_dm, "buscar_titulos_tesouro", return_value=df_t),
+            patch.object(_dm, "chave_cache_mercado", return_value="chave"),
+            patch.object(_dm.st, "session_state", session),
+        ):
             obter_dados_completos()
         assert session["_status_dados"]["ipca_fallback"] is False
         assert session["_status_dados"]["titulos_fallback"] is False
 
+
 # ---------------------------------------------------------------------------
 # Integridade: TITULOS_CONFIG × _TAXAS_REF
 # ---------------------------------------------------------------------------
+
 
 class TestIntegridadeConfigs:
     def test_todos_titulos_config_tem_taxa_ref(self):
@@ -634,8 +815,10 @@ class TestIntegridadeConfigs:
     def test_titulos_config_tem_vencimento_futuro_a_partir_de_2026(self):
         # Nenhum título deve ter vencimento antes de 2026 (seriam expirados ao lançar o app)
         from datetime import date as _date
+
         expirados = [
-            nome for nome, cfg in TITULOS_CONFIG.items()
+            nome
+            for nome, cfg in TITULOS_CONFIG.items()
             if cfg["vencimento"] < _date(2026, 1, 1)
         ]
         assert expirados == [], f"Títulos expirados em TITULOS_CONFIG: {expirados}"
@@ -651,7 +834,8 @@ class TestIntegridadeConfigs:
         # TITULOS_BATALHA é derivado via dict unpacking de TITULOS_CONFIG — este teste
         # detectaria uma refatoração que quebre essa derivação.
         erros = [
-            nome for nome in TITULOS_CONFIG
+            nome
+            for nome in TITULOS_CONFIG
             if nome not in TITULOS_BATALHA
             or TITULOS_BATALHA[nome].get("tipo") != "ipca_mais"
         ]

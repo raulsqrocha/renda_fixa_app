@@ -19,6 +19,7 @@ from core.graficos import (
 # _hex_to_rgb
 # ---------------------------------------------------------------------------
 
+
 class TestHexToRgb:
     def test_preto(self):
         assert _hex_to_rgb("#000000") == "0, 0, 0"
@@ -45,6 +46,7 @@ class TestHexToRgb:
 # ---------------------------------------------------------------------------
 # _layout_base
 # ---------------------------------------------------------------------------
+
 
 class TestLayoutBase:
     def test_retorna_dict(self):
@@ -77,6 +79,7 @@ class TestLayoutBase:
 # ---------------------------------------------------------------------------
 # grafico_score
 # ---------------------------------------------------------------------------
+
 
 class TestGraficoScore:
     def test_retorna_figure(self):
@@ -130,9 +133,10 @@ class TestGraficoScore:
 # grafico_cenarios
 # ---------------------------------------------------------------------------
 
+
 def _cenarios():
     return {
-        "Base (5% IPCA)":     {"valor_final": 12_000.0, "retorno_real_pct": 40.0},
+        "Base (5% IPCA)": {"valor_final": 12_000.0, "retorno_real_pct": 40.0},
         "Estresse (8% IPCA)": {"valor_final": 14_000.0, "retorno_real_pct": 40.0},
         "Otimista (3% IPCA)": {"valor_final": 11_000.0, "retorno_real_pct": 40.0},
     }
@@ -140,7 +144,9 @@ def _cenarios():
 
 class TestGraficoCenarios:
     def test_retorna_figure(self):
-        assert isinstance(grafico_cenarios(_cenarios(), anos=5, valor_investido=10_000), go.Figure)
+        assert isinstance(
+            grafico_cenarios(_cenarios(), anos=5, valor_investido=10_000), go.Figure
+        )
 
     def test_tem_dois_traces(self):
         fig = grafico_cenarios(_cenarios(), anos=5, valor_investido=10_000)

@@ -9,5 +9,5 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Torna @st.cache_data(ttl=...) um decorator no-op em contexto de teste,
 # evitando dependência do runtime do Streamlit para testar funções puras.
 _st_mock = MagicMock()
-_st_mock.cache_data.side_effect = lambda ttl=None, show_spinner=True, **kw: (lambda f: f)
+_st_mock.cache_data.side_effect = lambda ttl=None, show_spinner=True, **kw: lambda f: f
 sys.modules["streamlit"] = _st_mock
