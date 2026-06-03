@@ -9,14 +9,13 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
+from core.dados import timestamp_ultima_atualizacao, chave_cache_mercado
 from core.financas import (
     aliquota_ir_renda_fixa,
     formatar_brl,
 )
+from core.graficos import _aplicar_tema
 from core.persistencia import carregar, salvar, inicializar_session
-from core.dados import timestamp_ultima_atualizacao, chave_cache_mercado
-
-_FUNDO = "#0E1117"
 
 
 def _taxa_equivalente_isento(taxa_tributada: float, aliq_ir: float) -> float:
@@ -330,17 +329,17 @@ def render():
             hovertemplate="%{x}: %{y:.2f}%<extra></extra>",
         )
     )
+    _aplicar_tema(fig)
     fig.update_layout(
-        paper_bgcolor=_FUNDO,
-        plot_bgcolor=_FUNDO,
-        font=dict(color="#FAFAFA", family="Inter"),
-        yaxis=dict(title="Retorno Líquido (%)", gridcolor="#2D3748"),
+        yaxis=dict(
+            title=dict(text="Retorno Líquido (%)", standoff=12), gridcolor="#2D3748"
+        ),
         xaxis=dict(gridcolor="#2D3748"),
-        margin=dict(t=30, b=10),
+        margin=dict(t=30, b=70, l=70, r=20),
         height=360,
         showlegend=False,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, theme=None)
 
     # -----------------------------------------------------------------------
     # Taxa equivalente

@@ -188,7 +188,7 @@ def render():
         unsafe_allow_html=True,
     )
 
-    with st.spinner("Carregando dados do Tesouro Direto..."):
+    with st.spinner("Consultando carteira de títulos do Tesouro Direto..."):
         _, df_titulos, _ = obter_dados_completos()
 
     _ts = timestamp_ultima_atualizacao(chave_cache_mercado())
@@ -768,9 +768,12 @@ def render():
         st.plotly_chart(
             grafico_markowitz(analises, carteira_mix=mix, portfolios_mc=portfolios_mc),
             use_container_width=True,
+            theme=None,
         )
     with col_g2:
-        st.plotly_chart(grafico_cenarios_batalha(analises), use_container_width=True)
+        st.plotly_chart(
+            grafico_cenarios_batalha(analises), use_container_width=True, theme=None
+        )
 
     # -----------------------------------------------------------------------
     # Análise por Horizonte
@@ -805,6 +808,7 @@ def render():
     st.plotly_chart(
         grafico_retorno_por_horizonte(_res_horizonte, horizonte),
         use_container_width=True,
+        theme=None,
     )
     st.caption(
         "Linha sólida: título ainda em carrego — taxa original garantida. "

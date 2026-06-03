@@ -11,6 +11,14 @@ html, body, [class*="css"] {
     font-family: 'Inter', sans-serif !important;
 }
 
+/* ── Força fundo escuro — gráficos transparentes exigem bg escuro ──── */
+[data-testid="stApp"],
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stBottom"] {
+    background-color: #0E1117 !important;
+}
+
 /* ── Remove padding excessivo no topo do conteúdo principal ────────── */
 [data-testid="stMainBlockContainer"] {
     padding-top: 1.5rem !important;

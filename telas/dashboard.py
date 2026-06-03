@@ -34,7 +34,12 @@ from core.dados import (
     chave_cache_mercado,
 )
 from core.persistencia import carregar, salvar, inicializar_session
-from core.graficos import grafico_paradoxo, grafico_score
+from core.graficos import (
+    grafico_paradoxo,
+    grafico_score,
+    TEXTO as _GRAF_TEXTO,
+    _aplicar_tema,
+)
 import plotly.graph_objects as go
 
 from telas._dashboard_metricas import calcular_posicao_ntnb, calcular_posicao_simples
@@ -84,7 +89,7 @@ def render():
         unsafe_allow_html=True,
     )
 
-    with st.spinner("Carregando dados do Tesouro Direto e BCB..."):
+    with st.spinner("Sincronizando taxas com o Tesouro Direto e Banco Central..."):
         df_ipca, df_titulos, vna = obter_dados_completos()
 
     _ts = timestamp_ultima_atualizacao(chave_cache_mercado())
@@ -411,22 +416,20 @@ def render():
                     hovertemplate="Total investido: R$ %{y:,.2f}<extra></extra>",
                 )
             )
+            _aplicar_tema(_dc_fig_p)
             _dc_fig_p.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font_color="#e0e0e0",
                 yaxis=dict(
-                    title="Valor Final (R$)",
+                    title=dict(text="Valor Final (R$)", standoff=12),
                     gridcolor="rgba(255,255,255,0.06)",
                     tickprefix="R$ ",
                     tickformat=",.0f",
                 ),
                 xaxis=dict(title="Anos", gridcolor="rgba(255,255,255,0.04)"),
-                legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=-0.25),
-                margin=dict(t=10, b=10),
+                legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=-0.18),
+                margin=dict(t=10, b=60, l=75, r=20),
                 height=320,
             )
-            st.plotly_chart(_dc_fig_p, use_container_width=True)
+            st.plotly_chart(_dc_fig_p, use_container_width=True, theme=None)
 
         with _dtab_rev:
             _dtr1, _dtr2 = st.columns(2)
@@ -583,7 +586,8 @@ def render():
             _selic_date = st.session_state.get("port_data")
             _prev_selic_date = st.session_state.get("_port_selic_date_prev")
             if _selic_date is not None and _selic_date != _prev_selic_date:
-                st.session_state["port_taxa"] = buscar_selic_na_data(_selic_date)
+                with st.spinner("Consultando taxa Selic histórica no Banco Central..."):
+                    st.session_state["port_taxa"] = buscar_selic_na_data(_selic_date)
             st.session_state["_port_selic_date_prev"] = _selic_date
 
         # Garante que port_cat é sempre uma categoria válida (evita KeyError se None ou inválido)
@@ -873,12 +877,9 @@ def render():
                 "Longo (> 5a)": "#ef9a9a",
             }
             _dl = dict(
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font_color="#e0e0e0",
-                margin=dict(t=36, b=0, l=0, r=0),
+                margin=dict(t=36, b=40, l=10, r=10),
                 height=210,
-                legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=-0.08),
+                legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=-0.12),
             )
             _da1, _da2 = st.columns(2)
             with _da1:
@@ -895,16 +896,17 @@ def render():
                         hovertemplate="%{label}: R$ %{value:,.2f} (%{percent})<extra></extra>",
                     )
                 )
+                _aplicar_tema(_fig_t)
                 _fig_t.update_layout(
                     **_dl,
                     title=dict(
                         text="Alocação por Tipo",
-                        font=dict(size=12, color="#e0e0e0"),
+                        font=dict(size=12, color=_GRAF_TEXTO),
                         x=0.5,
                         xanchor="center",
                     ),
                 )
-                st.plotly_chart(_fig_t, use_container_width=True)
+                st.plotly_chart(_fig_t, use_container_width=True, theme=None)
             with _da2:
                 _prazo_order = [
                     k
@@ -924,16 +926,17 @@ def render():
                         hovertemplate="%{label}: R$ %{value:,.2f} (%{percent})<extra></extra>",
                     )
                 )
+                _aplicar_tema(_fig_p)
                 _fig_p.update_layout(
                     **_dl,
                     title=dict(
                         text="Alocação por Prazo",
-                        font=dict(size=12, color="#e0e0e0"),
+                        font=dict(size=12, color=_GRAF_TEXTO),
                         x=0.5,
                         xanchor="center",
                     ),
                 )
-                st.plotly_chart(_fig_p, use_container_width=True)
+                st.plotly_chart(_fig_p, use_container_width=True, theme=None)
 
         # ---- Recomendação de Diversificação ----------------------------------------
         if len(portfolio) >= 1:
@@ -1377,11 +1380,9 @@ def render():
                         hovertemplate="%{x}<br><b>R$ %{y:,.2f}</b><extra></extra>",
                     )
                 )
+                _aplicar_tema(fig_proj)
                 fig_proj.update_layout(
-                    margin=dict(t=10, b=30, l=10, r=10),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    font_color="#e0e0e0",
+                    margin=dict(t=10, b=65, l=75, r=10),
                     yaxis=dict(
                         tickprefix="R$ ",
                         separatethousands=True,
@@ -1389,10 +1390,10 @@ def render():
                         gridcolor="rgba(255,255,255,0.06)",
                     ),
                     xaxis=dict(gridcolor="rgba(255,255,255,0.04)", tickangle=-30),
-                    legend=dict(orientation="h", y=-0.25, x=0),
+                    legend=dict(orientation="h", y=-0.20, x=0),
                     height=290,
                 )
-                st.plotly_chart(fig_proj, use_container_width=True)
+                st.plotly_chart(fig_proj, use_container_width=True, theme=None)
             with col_sc:
                 st.metric(
                     "Saúde da Posição",
@@ -1404,7 +1405,9 @@ def render():
                         "**70–100 🟢 Saudável · 40–69 🟡 Atenção · 0–39 🔴 Risco**"
                     ),
                 )
-                st.plotly_chart(grafico_score(score), use_container_width=True)
+                st.plotly_chart(
+                    grafico_score(score), use_container_width=True, theme=None
+                )
 
             st.info(
                 f"📅 **Vencimento:** {data_vencimento.strftime('%d/%m/%Y')}  ·  "
@@ -1562,7 +1565,9 @@ def render():
                         "**70–100 🟢 Saudável · 40–69 🟡 Atenção · 0–39 🔴 Risco**"
                     ),
                 )
-                st.plotly_chart(grafico_score(score), use_container_width=True)
+                st.plotly_chart(
+                    grafico_score(score), use_container_width=True, theme=None
+                )
 
             # Gráfico do Paradoxo
             st.markdown("---")
@@ -1589,6 +1594,7 @@ def render():
                         datas_cupom=cpns_hoje if tem_cupom else None,
                     ),
                     use_container_width=True,
+                    theme=None,
                 )
 
             with col_leg:
@@ -2033,14 +2039,13 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
                         hovertemplate="%{label}<br>R$ %{value:,.0f}<br>%{percent}<extra></extra>",
                     )
                 )
+                _aplicar_tema(fig_pie)
                 fig_pie.update_layout(
-                    margin=dict(t=10, b=10, l=10, r=10),
+                    margin=dict(t=10, b=10, l=40, r=40),
                     showlegend=False,
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    font_color="#e0e0e0",
                     height=260,
                 )
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.plotly_chart(fig_pie, use_container_width=True, theme=None)
 
             with col_g2:
                 st.markdown("**Saúde por posição**")
@@ -2059,16 +2064,14 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
                         textposition="inside",
                     )
                 )
+                _aplicar_tema(fig_bar)
                 fig_bar.update_layout(
                     xaxis=dict(range=[0, 100], showgrid=False),
                     yaxis=dict(autorange="reversed"),
-                    margin=dict(t=10, b=10, l=10, r=10),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    font_color="#e0e0e0",
+                    margin=dict(t=10, b=10, l=130, r=20),
                     height=260,
                 )
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.plotly_chart(fig_bar, use_container_width=True, theme=None)
 
             # MaM vs Carrego por posição
             st.markdown("**MaM atual vs. Carrego no vencimento**")
@@ -2087,17 +2090,15 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
             fig_cmp.add_trace(
                 go.Bar(name="Carrego Vencimento", x=_n, y=_car, marker_color="#a5d6a7")
             )
+            _aplicar_tema(fig_cmp)
             fig_cmp.update_layout(
                 barmode="group",
-                margin=dict(t=10, b=10, l=10, r=10),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font_color="#e0e0e0",
+                margin=dict(t=10, b=60, l=80, r=20),
                 legend=dict(orientation="h", y=-0.2),
                 height=300,
                 yaxis=dict(tickprefix="R$ ", separatethousands=True),
             )
-            st.plotly_chart(fig_cmp, use_container_width=True)
+            st.plotly_chart(fig_cmp, use_container_width=True, theme=None)
 
             # Tabela detalhada
             st.markdown("**Detalhamento por posição**")

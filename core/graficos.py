@@ -26,6 +26,12 @@ GRID = "#2D3748"
 TEXTO = "#FAFAFA"
 TEXTO_FRACO = "#718096"
 
+_HOVERLABEL = dict(
+    bgcolor=FUNDO_SECUND,
+    font=dict(color=TEXTO, family="Inter"),
+    bordercolor=GRID,
+)
+
 
 def _layout_base(titulo: str, yaxis_prefix: str = "R$ ") -> dict:
     """Layout Plotly padrão para todos os gráficos do app."""
@@ -36,8 +42,8 @@ def _layout_base(titulo: str, yaxis_prefix: str = "R$ ") -> dict:
             x=0,
             xanchor="left",
         ),
-        paper_bgcolor=FUNDO,
-        plot_bgcolor=FUNDO,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color=TEXTO, family="Inter"),
         xaxis=dict(gridcolor=GRID, linecolor=GRID, zeroline=False),
         yaxis=dict(
@@ -46,14 +52,31 @@ def _layout_base(titulo: str, yaxis_prefix: str = "R$ ") -> dict:
             zeroline=False,
             tickprefix=yaxis_prefix,
             tickformat=",.0f",
+            title=dict(standoff=12),
         ),
         hovermode="x unified",
         separators=",.",
+        hoverlabel=_HOVERLABEL,
         legend=dict(
             bgcolor="rgba(0,0,0,0)", bordercolor=GRID, orientation="h", y=-0.18
         ),
-        margin=dict(l=10, r=10, t=55, b=10),
+        margin=dict(l=85, r=20, t=55, b=70),
     )
+
+
+def _aplicar_tema(fig: go.Figure) -> go.Figure:
+    """Aplica fundo transparente e paleta escura a qualquer figura Plotly.
+
+    Use em charts que não passam por _layout_base (ex: figuras inline,
+    pie/donut, barras de portfólio no dashboard).
+    """
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=TEXTO, family="Inter"),
+        hoverlabel=_HOVERLABEL,
+    )
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -294,9 +317,8 @@ def grafico_score(score: float) -> go.Figure:
             },
         )
     )
+    _aplicar_tema(fig)
     fig.update_layout(
-        paper_bgcolor=FUNDO,
-        font={"color": TEXTO, "family": "Inter"},
         height=210,
         margin=dict(l=15, r=15, t=40, b=5),
     )
@@ -409,7 +431,11 @@ def grafico_ipca_historico(df_ipca: pd.DataFrame) -> go.Figure:
         **_layout_base("Retrospecto Histórico — IPCA Anual no Brasil", yaxis_prefix="")
     )
     fig.update_layout(
-        yaxis=dict(ticksuffix="%", tickformat=".1f", title="IPCA Acumulado no Ano (%)"),
+        yaxis=dict(
+            ticksuffix="%",
+            tickformat=".1f",
+            title=dict(text="IPCA Acumulado no Ano (%)"),
+        ),
         xaxis_title="",
         showlegend=False,
     )
@@ -472,16 +498,19 @@ def grafico_cenarios(cenarios: dict, anos: int, valor_investido: float) -> go.Fi
     fig.add_hline(
         y=valor_investido,
         line_dash="dot",
-        line_color=TEXTO_FRACO,
+        line_color=AMARELO,
+        line_width=1.5,
         annotation_text=f"Capital Inicial: {formatar_brl(valor_investido, 0)}",
         annotation_position="top left",
-        annotation_font_color=TEXTO_FRACO,
+        annotation_font_color=AMARELO,
         annotation_font_size=10,
     )
 
     fig.update_layout(**_layout_base(f"Projeção de Cenários — {anos} anos"))
     fig.update_layout(
-        yaxis=dict(title="Valor Final (R$)", tickprefix="R$ ", tickformat=",.0f"),
+        yaxis=dict(
+            title=dict(text="Valor Final (R$)"), tickprefix="R$ ", tickformat=",.0f"
+        ),
         yaxis2=dict(
             title="Ganho Real Acumulado (%)",
             overlaying="y",
@@ -490,6 +519,7 @@ def grafico_cenarios(cenarios: dict, anos: int, valor_investido: float) -> go.Fi
             tickformat=".0f",
             showgrid=False,
         ),
+        margin=dict(l=110, r=80, t=55, b=70),
     )
     return fig
 
@@ -517,8 +547,6 @@ def grafico_curva_di(dados_di: list) -> go.Figure:
             text=[f"{t:.2f}%" for t in taxas],
             textposition="top center",
             textfont=dict(size=10),
-            fill="tozeroy",
-            fillcolor="rgba(66, 153, 225, 0.08)",
             hovertemplate="<b>DI %{x}</b><br>Taxa: %{y:.2f}% a.a.<extra></extra>",
             name="DI Futuro",
         )
@@ -527,8 +555,14 @@ def grafico_curva_di(dados_di: list) -> go.Figure:
     fig.update_layout(
         **_layout_base("Curva de Juros Futuros — DI Futuro (B3)", yaxis_prefix="")
     )
+    margem = max((max(taxas) - min(taxas)) * 0.3, 0.5) if len(taxas) > 1 else 0.5
     fig.update_layout(
-        yaxis=dict(ticksuffix="%", tickformat=".2f", title="Taxa ao Ano (%)"),
+        yaxis=dict(
+            ticksuffix="%",
+            tickformat=".2f",
+            title=dict(text="Taxa ao Ano (%)"),
+            range=[min(taxas) - margem, max(taxas) + margem],
+        ),
         xaxis_title="Vencimento do Contrato",
     )
     return fig
@@ -695,7 +729,7 @@ def grafico_markowitz(
             gridcolor=GRID,
         ),
         yaxis=dict(
-            title="Retorno Esperado (% a.a.)",
+            title=dict(text="Retorno Esperado (% a.a.)"),
             ticksuffix="%",
             tickformat=".2f",
             gridcolor=GRID,
@@ -752,7 +786,7 @@ def grafico_cenarios_batalha(analises: list) -> go.Figure:
     fig.update_layout(
         barmode="group",
         yaxis=dict(
-            title="Retorno Anualizado (% a.a.)",
+            title=dict(text="Retorno Anualizado (% a.a.)"),
             ticksuffix="%",
             tickformat=".1f",
             gridcolor=GRID,
@@ -882,7 +916,7 @@ def grafico_retorno_por_horizonte(
     fig.update_layout(
         xaxis=dict(title="Horizonte de saída (anos)", dtick=1, gridcolor=GRID),
         yaxis=dict(
-            title="Retorno esperado (% a.a.)",
+            title=dict(text="Retorno esperado (% a.a.)"),
             ticksuffix="%",
             tickformat=".1f",
             tickprefix="",

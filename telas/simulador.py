@@ -93,7 +93,7 @@ def render():
         unsafe_allow_html=True,
     )
 
-    with st.spinner("Carregando dados..."):
+    with st.spinner("Buscando títulos e IPCA histórico no Banco Central..."):
         df_ipca, df_titulos, vna = obter_dados_completos()
 
     _ts = timestamp_ultima_atualizacao(chave_cache_mercado())
@@ -228,12 +228,12 @@ def render():
             rows.append(
                 {
                     "Cenário": nome,
-                    "Taxa Nominal a.a.": f"{c['taxa_nominal_aa']:.2f}%",
+                    "Taxa a.a.": f"{c['taxa_nominal_aa']:.2f}%",
                     "Valor Final": formatar_brl(c["valor_final"]),
-                    "Retorno Nominal Acumulado": f"{c['retorno_nominal_pct'] / 100 + 1:.1f}× o capital inicial"
+                    "Retorno": f"{c['retorno_nominal_pct'] / 100 + 1:.1f}×"
                     if c["retorno_nominal_pct"] > 1000
                     else f"{c['retorno_nominal_pct']:.1f}%",
-                    "Ganho Real ✅": f"+{c['retorno_real_pct']:.1f}%",
+                    "Ganho Real": f"+{c['retorno_real_pct']:.1f}%",
                 }
             )
 
@@ -250,7 +250,7 @@ def render():
         )
 
     fig_cen = grafico_cenarios(cenarios, anos_restantes, valor_sim)
-    st.plotly_chart(fig_cen, use_container_width=True)
+    st.plotly_chart(fig_cen, use_container_width=True, theme=None)
 
     st.divider()
 
@@ -620,7 +620,7 @@ no futuro — cenário positivo para quem detém títulos longos.
                 di_inputs.append({"vencimento": venc, "taxa": taxa})
 
         fig_di = grafico_curva_di(di_inputs)
-        st.plotly_chart(fig_di, use_container_width=True)
+        st.plotly_chart(fig_di, use_container_width=True, theme=None)
 
         st.caption(
             "⚠️ As taxas acima são inseridas manualmente. "
@@ -637,7 +637,7 @@ no futuro — cenário positivo para quem detém títulos longos.
 
         with col_h1:
             fig_ipca = grafico_ipca_historico(df_ipca)
-            st.plotly_chart(fig_ipca, use_container_width=True)
+            st.plotly_chart(fig_ipca, use_container_width=True, theme=None)
 
         with col_h2:
             st.markdown("### Marcos Históricos")
