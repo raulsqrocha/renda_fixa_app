@@ -5,7 +5,6 @@ import plotly.graph_objects as go
 from core.graficos import (
     AMARELO,
     AZUL,
-    FUNDO,
     VERDE,
     VERMELHO,
     _hex_to_rgb,
@@ -52,9 +51,9 @@ class TestLayoutBase:
     def test_retorna_dict(self):
         assert isinstance(_layout_base("Título"), dict)
 
-    def test_paper_bgcolor_e_fundo(self):
+    def test_paper_bgcolor_transparente(self):
         layout = _layout_base("T")
-        assert layout["paper_bgcolor"] == FUNDO
+        assert layout["paper_bgcolor"] == "rgba(0,0,0,0)"
 
     def test_hovermode_x_unified(self):
         assert _layout_base("T")["hovermode"] == "x unified"
