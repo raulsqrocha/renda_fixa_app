@@ -628,7 +628,8 @@ def _titulos_fallback() -> pd.DataFrame:
     """
     Dados de referência para quando o CSV do Tesouro Transparente está indisponível.
     Inclui IPCA+, RendA+, Educar+ (via TITULOS_CONFIG) e Selic/Prefixado (via TITULOS_BATALHA).
-    Taxas em _TAXAS_REF extraídas em 26/05/2026 — atualizar periodicamente.
+    Data de extração de _TAXAS_REF: ver comentário acima do dict (atualizado por
+    scripts/atualizar_taxas_ref.py).
     """
     hoje = date.today()
     # Usa VNA calculado pelo IPCA acumulado real (muito mais preciso que VNA_FALLBACK 5% flat)
