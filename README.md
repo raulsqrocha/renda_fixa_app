@@ -142,6 +142,14 @@ pip install -r requirements-dev.txt
 pytest tests/ --cov=core --cov=telas
 ```
 
+UI tests (`tests/apptest/`) drive the real pages via `streamlit.testing.v1.AppTest`
+and must run as a **separate** invocation — mixing them into the command above
+would make both suites' streamlit mocking clash:
+
+```bash
+pytest tests/apptest
+```
+
 ## Project Structure
 
 ```
@@ -165,7 +173,8 @@ renda_fixa_app/
 │   ├── batalha.py                # Which Asset screen logic
 │   ├── comparar.py               # Compare Products screen logic
 │   └── simulador.py              # Advanced Simulator screen logic
-├── tests/                        # pytest test suite (393 tests, ruff + mypy clean)
+├── tests/                        # pytest test suite (400 tests, ruff + mypy clean)
+│   └── apptest/                  # UI smoke/interaction tests via streamlit.testing.v1.AppTest
 ├── scripts/
 │   └── atualizar_taxas_ref.py    # Helper to refresh fallback reference rates
 ├── requirements.txt

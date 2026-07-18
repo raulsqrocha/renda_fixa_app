@@ -32,3 +32,6 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v --tb=short --cov=core --cov-report=term-missing --cov-fail-under=65
+
+      - name: Run UI tests (AppTest)
+        run: pytest tests/apptest -v --tb=short
