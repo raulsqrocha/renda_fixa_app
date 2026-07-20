@@ -18,12 +18,54 @@ _PREFS_FILE = Path(__file__).parent.parent / "user_prefs.json"
 # True quando rodando no Streamlit Cloud (filesystem compartilhado entre usuários)
 _IS_CLOUD = os.environ.get("HOME") == "/home/appuser"
 
+# Portfólio de demonstração — carregado por padrão quando não há dados salvos
+# (visitante novo no Streamlit Cloud, ou clone local sem user_prefs.json), para
+# que o valor do app apareça de imediato em vez de uma tela vazia. mam_cache/
+# carrego_cache/anos são placeholders: telas/dashboard.py recalcula esses três
+# campos com dados ao vivo para TODA posição a cada render, antes de qualquer
+# uso — os valores aqui nunca chegam a ser exibidos sem recálculo.
+_PORTFOLIO_DEMO: list = [
+    {
+        "titulo": "Tesouro IPCA+ 2032",
+        "valor": 15_000.0,
+        "taxa": 7.50,
+        "data_compra": "2025-05-20",
+        "mam_cache": 15_000.0,
+        "carrego_cache": 15_000.0,
+        "vencimento": "2032-08-15",
+        "anos": 6,
+        "tipo_asset": "ipca_mais",
+    },
+    {
+        "titulo": "Tesouro Selic 2031",
+        "valor": 8_000.0,
+        "taxa": 14.75,
+        "data_compra": "2025-09-10",
+        "mam_cache": 8_000.0,
+        "carrego_cache": 8_000.0,
+        "vencimento": "2031-03-01",
+        "anos": 5,
+        "tipo_asset": "selic",
+    },
+    {
+        "titulo": "Tesouro Prefixado 2029",
+        "valor": 6_000.0,
+        "taxa": 14.50,
+        "data_compra": "2025-11-01",
+        "mam_cache": 6_000.0,
+        "carrego_cache": 6_000.0,
+        "vencimento": "2029-01-01",
+        "anos": 3,
+        "tipo_asset": "pre",
+    },
+]
+
 
 def _default_prefs() -> dict:
     """Retorna o dicionário de preferências com todos os valores padrão do app."""
     return {
         # Dashboard — portfólio e análise
-        "_portfolio": [],
+        "_portfolio": [dict(p) for p in _PORTFOLIO_DEMO],
         "_analysis_pos_idx": 0,
         "dash_descontar_custodia": False,
         "venda_ipca_b": 5.0,

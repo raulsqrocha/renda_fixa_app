@@ -29,17 +29,10 @@ def _clicar(at: AppTest, trecho_label: str) -> AppTest:
 
 
 class TestDashboard:
-    def test_estado_vazio_sem_excecao(self):
+    def test_estado_inicial_mostra_portfolio_demo(self):
+        # Sem dados salvos (sessão nova/cloud), o portfólio-demo já vem
+        # pré-carregado — o valor do app aparece de imediato, sem tela vazia.
         at = _run("pages/0_Dashboard.py")
-        textos_info = " ".join(i.value for i in at.info)
-        assert "Bem-vindo" in textos_info
-        labels_botao = [b.label for b in at.button]
-        assert any("Carregar Exemplo" in lbl for lbl in labels_botao)
-        assert any("Adicionar ao portfólio" in lbl for lbl in labels_botao)
-
-    def test_carregar_exemplo_popula_portfolio_e_metricas(self):
-        at = _run("pages/0_Dashboard.py")
-        _clicar(at, "Carregar Exemplo")
 
         labels_metric = [m.label for m in at.metric]
         for esperado in (
@@ -54,13 +47,22 @@ class TestDashboard:
         assert len(at.tabs) == 6
         assert len(at.dataframe) >= 1  # tabela do portfólio
 
-    def test_remover_posicao_volta_ao_estado_vazio(self):
+    def test_limpar_tudo_mostra_estado_vazio(self):
         at = _run("pages/0_Dashboard.py")
-        _clicar(at, "Carregar Exemplo")
         _clicar(at, "Limpar tudo")
 
         textos_info = " ".join(i.value for i in at.info)
         assert "Bem-vindo" in textos_info
+        labels_botao = [b.label for b in at.button]
+        assert any("Carregar Exemplo" in lbl for lbl in labels_botao)
+
+    def test_carregar_exemplo_apos_limpar_repopula_portfolio(self):
+        at = _run("pages/0_Dashboard.py")
+        _clicar(at, "Limpar tudo")
+        _clicar(at, "Carregar Exemplo")
+
+        labels_metric = [m.label for m in at.metric]
+        assert "Capital Investido" in labels_metric
 
 
 # ---------------------------------------------------------------------------

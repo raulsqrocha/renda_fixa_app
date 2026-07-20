@@ -20,6 +20,7 @@ from core.persistencia import (
     inicializar_session,
     salvar,
     _default_prefs,
+    _PORTFOLIO_DEMO,
 )
 
 
@@ -45,8 +46,13 @@ class TestDefaultPrefs:
     def test_contem_portfolio(self):
         assert "_portfolio" in _default_prefs()
 
-    def test_portfolio_lista_vazia(self):
-        assert _default_prefs()["_portfolio"] == []
+    def test_portfolio_e_o_demo_padrao(self):
+        # Sem dados salvos, o padrão é um portfólio-demo (não vazio) — o valor
+        # do app deve aparecer de imediato para um visitante novo, em vez de
+        # uma tela vazia.
+        portfolio = _default_prefs()["_portfolio"]
+        assert portfolio == _PORTFOLIO_DEMO
+        assert len(portfolio) >= 2
 
     def test_analysis_pos_idx_zero(self):
         assert _default_prefs()["_analysis_pos_idx"] == 0
@@ -54,8 +60,17 @@ class TestDefaultPrefs:
     def test_nao_compartilha_estado_entre_chamadas(self):
         d1 = _default_prefs()
         d2 = _default_prefs()
-        d1["_portfolio"].append("x")
-        assert d2["_portfolio"] == []
+        tamanho_original = len(d2["_portfolio"])
+        d1["_portfolio"].append({"titulo": "x"})
+        assert len(d2["_portfolio"]) == tamanho_original
+
+    def test_nao_compartilha_dicts_das_posicoes_entre_chamadas(self):
+        # Cada chamada deve retornar cópias independentes dos dicts de posição —
+        # mutar um campo em uma não pode vazar para outra sessão/chamada.
+        d1 = _default_prefs()
+        d2 = _default_prefs()
+        d1["_portfolio"][0]["valor"] = 999_999.0
+        assert d2["_portfolio"][0]["valor"] != 999_999.0
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +129,7 @@ class TestCarregar:
             patch.object(persistencia, "_IS_CLOUD", False),
         ):
             res = carregar()
-        assert res["_portfolio"] == []
+        assert res["_portfolio"] == _PORTFOLIO_DEMO
 
     def test_analysis_pos_idx_nao_int_resetado(self, tmp_path):
         arquivo = tmp_path / "prefs.json"
