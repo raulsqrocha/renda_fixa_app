@@ -134,14 +134,18 @@ def grafico_paradoxo(
     )
 
     # Anotação na zona de pânico (1/4 do caminho)
+    # yshift (pixels, independente da escala do eixo Y) afasta o rótulo da linha —
+    # um deslocamento percentual do valor do dado (ex: *0.988) falha em eixos com
+    # range estreito, deixando o texto colado/cortando a própria linha.
     idx_panico = len(df) // 4
     fig.add_annotation(
         x=df["data"].iloc[idx_panico],
-        y=df["mam"].iloc[idx_panico] * 0.988,
+        y=df["mam"].iloc[idx_panico],
+        yshift=-20,
         text="⚡ Zona de Pânico",
         font=dict(color=VERMELHO, size=11, family="Inter"),
         showarrow=False,
-        bgcolor="rgba(229,62,62,0.12)",
+        bgcolor=FUNDO_SECUND,
         bordercolor=VERMELHO,
         borderwidth=1,
         borderpad=4,
@@ -151,11 +155,12 @@ def grafico_paradoxo(
     idx_meio = len(df) // 2
     fig.add_annotation(
         x=df["data"].iloc[idx_meio],
-        y=df["carrego"].iloc[idx_meio] * 1.01,
+        y=df["carrego"].iloc[idx_meio],
+        yshift=20,
         text="🛡️ Blindagem do Capital",
         font=dict(color=VERDE, size=11, family="Inter"),
         showarrow=False,
-        bgcolor="rgba(56,161,105,0.12)",
+        bgcolor=FUNDO_SECUND,
         bordercolor=VERDE,
         borderwidth=1,
         borderpad=4,
@@ -181,7 +186,7 @@ def grafico_paradoxo(
             text="📍 Hoje",
             showarrow=False,
             font=dict(color=AMARELO, size=11, family="Inter"),
-            bgcolor="rgba(236,201,75,0.10)",
+            bgcolor=FUNDO_SECUND,
             bordercolor=AMARELO,
             borderwidth=1,
             borderpad=4,
@@ -205,12 +210,12 @@ def grafico_paradoxo(
             )
             fig.add_annotation(
                 x=compra_ts,
-                y=0.12,
+                y=0.03,
                 yref="paper",
                 text="📅 Compra",
                 showarrow=False,
                 font=dict(color=AZUL, size=10, family="Inter"),
-                bgcolor="rgba(66,153,225,0.10)",
+                bgcolor=FUNDO_SECUND,
                 bordercolor=AZUL,
                 borderwidth=1,
                 borderpad=4,
@@ -242,7 +247,7 @@ def grafico_paradoxo(
                     text="💰 Cupom",
                     showarrow=False,
                     font=dict(color=LARANJA, size=10, family="Inter"),
-                    bgcolor="rgba(221,107,32,0.10)",
+                    bgcolor=FUNDO_SECUND,
                     bordercolor=LARANJA,
                     borderwidth=1,
                     borderpad=4,
@@ -261,7 +266,7 @@ def grafico_paradoxo(
                 text="🏁 Vencimento",
                 showarrow=False,
                 font=dict(color=VERDE, size=10, family="Inter"),
-                bgcolor="rgba(56,161,105,0.10)",
+                bgcolor=FUNDO_SECUND,
                 bordercolor=VERDE,
                 borderwidth=1,
                 borderpad=4,
