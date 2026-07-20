@@ -224,9 +224,11 @@ def renderizar(df_titulos: pd.DataFrame, default_cap: float) -> None:
                 tickformat=",.0f",
             ),
             xaxis=dict(title="Anos", gridcolor="rgba(255,255,255,0.04)"),
-            legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=-0.18),
-            margin=dict(t=10, b=60, l=75, r=20),
-            height=320,
+            # legend com até 7 séries (6 produtos + Total Investido): y mais negativo
+            # e margem inferior maior evitam que ela colida com o título "Anos".
+            legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=-0.35),
+            margin=dict(t=10, b=95, l=90, r=20),
+            height=360,
         )
         st.plotly_chart(_dc_fig_p, width="stretch", theme=None)
 
