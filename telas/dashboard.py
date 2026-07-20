@@ -958,7 +958,7 @@ def render():
 
     # =========================== ABA 3: PORTFÓLIO ============================
     with tab_port:
-        _dashboard_aba_portfolio.renderizar(portfolio, _calcs_port)
+        _dashboard_aba_portfolio.renderizar(portfolio, _calcs_port, vna)
 
     # =========================== ABA 4: UTILITÁRIOS ==========================
     with tab_util:

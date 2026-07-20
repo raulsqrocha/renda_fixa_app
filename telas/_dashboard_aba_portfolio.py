@@ -2,18 +2,21 @@
 Aba "Portfólio" da Análise Detalhada do Dashboard — extraída de dashboard.py.
 
 Visão estatística de toda a carteira: métricas ponderadas, alertas de
-concentração, alocação por título/saúde e tabela consolidada por título.
+concentração, alocação por título/saúde, tabela consolidada por título e
+choque de curva (estilo COPOM) sobre o portfólio inteiro.
 """
+
+from datetime import date
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from core.financas import formatar_brl
+from core.financas import formatar_brl, metricas_carteira
 from core.graficos import _aplicar_tema
 
 
-def renderizar(portfolio: list, calcs_port: list) -> None:
+def renderizar(portfolio: list, calcs_port: list, vna: float) -> None:
     st.caption(
         "Visão estatística de toda a carteira — independente da posição selecionada acima."
     )
@@ -287,3 +290,88 @@ def renderizar(portfolio: list, calcs_port: list) -> None:
                     }
                 )
             st.dataframe(pd.DataFrame(_rows_cons), hide_index=True, width="stretch")
+
+        # ---- Choque de Curva — Portfólio Inteiro (estilo COPOM) ----
+        st.markdown("---")
+        st.markdown("**Choque de Curva — Portfólio Inteiro**")
+        st.caption(
+            "Simula uma alta/queda uniforme na taxa real sobre os títulos IPCA+/RendA+/"
+            "Educar+ da carteira — os únicos com MaM sensível a taxa neste app. Selic, "
+            "Prefixado, CDB, LCI e LCA são modelados por accrual (taxa contratada) nesta "
+            "visão do Dashboard e não entram na simulação."
+        )
+
+        _posicoes_ipca = [
+            (portfolio[i], calcs_port[i])
+            for i in range(len(portfolio))
+            if calcs_port[i] is not None and not calcs_port[i].get("is_simples")
+        ]
+
+        if not _posicoes_ipca:
+            st.info(
+                "Nenhum título IPCA+/RendA+/Educar+ na carteira para simular.", icon="ℹ️"
+            )
+        else:
+
+            def _mam_a_taxa(pos: dict, calc: dict, taxa_mercado: float) -> float:
+                res = metricas_carteira(
+                    valor_investido=pos["valor"],
+                    pu_na_compra=calc["pu_c"],
+                    taxa_real_contratada=calc["tc"],
+                    taxa_real_mercado=taxa_mercado,
+                    vna=vna,
+                    data_hoje=date.today(),
+                    data_vencimento=calc["dv"],
+                    datas_cupom=calc["cpns_h"],
+                )
+                return res["mam"]
+
+            choque_copom = st.slider(
+                "Magnitude do choque na taxa real (p.p.)",
+                min_value=0.0,
+                max_value=3.0,
+                value=1.0,
+                step=0.25,
+                format="%.2f p.p.",
+                key="port_choque_copom",
+            )
+
+            _mam_hoje = sum(p["mam_cache"] for p, _ in _posicoes_ipca)
+            _mam_adv = sum(
+                _mam_a_taxa(p, c, max(0.001, c["tm"] + choque_copom / 100))
+                for p, c in _posicoes_ipca
+            )
+            _mam_fav = sum(
+                _mam_a_taxa(p, c, max(0.001, c["tm"] - choque_copom / 100))
+                for p, c in _posicoes_ipca
+            )
+            _delta_adv = _mam_adv - _mam_hoje
+            _delta_fav = _mam_fav - _mam_hoje
+
+            cc1, cc2, cc3 = st.columns(3)
+            with cc1:
+                st.metric(
+                    f"Hoje ({len(_posicoes_ipca)} posição(ões) IPCA+)",
+                    formatar_brl(_mam_hoje),
+                )
+            with cc2:
+                st.metric(
+                    f"Se subir {choque_copom:.2f} p.p.",
+                    formatar_brl(_mam_adv),
+                    formatar_brl(_delta_adv),
+                    delta_color="inverse",
+                )
+            with cc3:
+                st.metric(
+                    f"Se cair {choque_copom:.2f} p.p.",
+                    formatar_brl(_mam_fav),
+                    formatar_brl(_delta_fav),
+                    delta_color="normal",
+                )
+
+            _pct_adv = (_delta_adv / _mam_hoje * 100) if _mam_hoje > 0 else 0.0
+            st.caption(
+                f"Um choque de +{choque_copom:.2f} p.p. na taxa real reduziria o valor de "
+                f"resgate hoje em {formatar_brl(abs(_delta_adv))} ({abs(_pct_adv):.1f}%) — "
+                "sem afetar o que você recebe se aguardar o vencimento de cada título."
+            )
