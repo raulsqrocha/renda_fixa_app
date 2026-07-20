@@ -578,6 +578,40 @@ def taxa_poupanca_anual(selic_aa: float, tr_aa: float = 0.0) -> float:
     return (1 + taxa_anual_sem_tr) * (1 + tr_aa) - 1
 
 
+def taxa_reinvestimento_breakeven(
+    liq_venda: float,
+    val_aguardar: float,
+    anos: float,
+    com_ir: bool = False,
+    aliq_reinv: float = 0.0,
+) -> float:
+    """
+    Taxa de reinvestimento anual (em %, não decimal) que faz "vender agora e
+    reinvestir" empatar exatamente com "aguardar o vencimento/prazo".
+
+    Resolve algebricamente a mesma fórmula usada no comparador de cenários
+    (vender ⟶ reinvestir a `r` por `anos`, opcionalmente com IR sobre o ganho
+    do reinvestimento) isolando `r`, em vez de busca numérica:
+
+        Sem IR:      liq_venda × (1+r)^anos = val_aguardar
+        Com IR:      liq_venda × [1 + ((1+r)^anos − 1)×(1−aliq_reinv)] = val_aguardar
+
+    Retorna float('nan') se liq_venda <= 0, anos <= 0 ou aliq_reinv >= 1
+    (indefinido). Retorna float('-inf') se `val_aguardar` já é menor ou igual
+    a `liq_venda` — nesse caso qualquer taxa de reinvestimento (mesmo 0%) já
+    supera aguardar, não existe um "breakeven" positivo.
+    """
+    if liq_venda <= 0 or anos <= 0 or (com_ir and aliq_reinv >= 1.0):
+        return float("nan")
+    if com_ir:
+        termo = 1 + (val_aguardar / liq_venda - 1) / (1 - aliq_reinv)
+    else:
+        termo = val_aguardar / liq_venda
+    if termo <= 0:
+        return float("-inf")
+    return (termo ** (1 / anos) - 1) * 100
+
+
 def aliquota_ir_renda_fixa(horizonte_anos: float) -> float:
     """Alíquota regressiva de IR sobre renda fixa (Tesouro Direto)."""
     dias = horizonte_anos * 365

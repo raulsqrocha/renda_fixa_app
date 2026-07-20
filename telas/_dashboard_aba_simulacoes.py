@@ -14,6 +14,7 @@ from core.financas import (
     aliquota_ir_renda_fixa,
     formatar_brl,
     metricas_carteira,
+    taxa_reinvestimento_breakeven,
 )
 from telas import _dashboard_calculadora
 
@@ -267,4 +268,30 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
             f"IR Cenário A: venda {formatar_brl(ir_dev)} ({aliq_ir_v * 100:.0f}%) "
             f"+ reinvest. {formatar_brl(_ir_reinv)} ({_aliq_reinv * 100:.0f}%) — "
             f"IR Cenário B: {aliq_ir_b * 100:.0f}% sobre lucro total (prazo desde a compra)."
+        )
+
+    # ---- Break-even: taxa de reinvestimento que empata os dois cenários ----
+    r_breakeven = taxa_reinvestimento_breakeven(
+        liq_venda, val_aguardar, anos_venda, com_ir=ir_venda, aliq_reinv=_aliq_reinv
+    )
+    if r_breakeven == float("-inf"):
+        st.success(
+            f"🎯 **Break-even:** aguardar rende {formatar_brl(val_aguardar)}, abaixo do que "
+            f"você já tem em mãos vendendo hoje ({formatar_brl(liq_venda)} líquido) — "
+            "**qualquer taxa de reinvestimento positiva já supera aguardar.**",
+            icon="🎯",
+        )
+    elif r_breakeven == r_breakeven:  # descarta NaN (liq_venda/anos inválidos)
+        _compensa_vender = r_breakeven <= taxa_reinv
+        st.info(
+            f"🎯 **Break-even:** reinvestindo a **{r_breakeven:.2f}% a.a.**, vender agora empata "
+            f"exatamente com aguardar {anos_venda} ano(s). "
+            + (
+                f"A taxa de {taxa_reinv:.1f}% a.a. que você indicou já **supera** esse patamar — "
+                "vender e reinvestir compensa."
+                if _compensa_vender
+                else f"A taxa de {taxa_reinv:.1f}% a.a. que você indicou está **abaixo** desse patamar — "
+                "só compensa vender se você conseguir uma taxa de reinvestimento melhor que a break-even."
+            ),
+            icon="🎯",
         )

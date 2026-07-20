@@ -30,6 +30,7 @@ from core.financas import (
     retorno_mam_antecipado,
     _fator_pu_ntnb_unitario,
     taxa_poupanca_anual,
+    taxa_reinvestimento_breakeven,
     cupom_semestral,
     pu_ntnb,
     calcular_du,
@@ -112,6 +113,66 @@ class TestTaxaPoupancaAnual:
         sem_tr = taxa_poupanca_anual(0.1475, tr_aa=0.0)
         com_tr = taxa_poupanca_anual(0.1475, tr_aa=0.01)
         assert com_tr > sem_tr
+
+
+# ---------------------------------------------------------------------------
+# Break-even de reinvestimento (vender agora vs. aguardar)
+# ---------------------------------------------------------------------------
+
+
+class TestTaxaReinvestimentoBreakeven:
+    def test_sem_ir_formula_manual(self):
+        liq, alvo, anos = 10_000.0, 12_000.0, 3.0
+        esperado = ((alvo / liq) ** (1 / anos) - 1) * 100
+        r = taxa_reinvestimento_breakeven(liq, alvo, anos)
+        assert abs(r - esperado) < 1e-9
+
+    def test_sem_ir_taxa_encontrada_realmente_empata(self):
+        liq, alvo, anos = 10_000.0, 12_000.0, 3.0
+        r = taxa_reinvestimento_breakeven(liq, alvo, anos)
+        valor_com_r = liq * (1 + r / 100) ** anos
+        assert abs(valor_com_r - alvo) < 1e-6
+
+    def test_com_ir_taxa_encontrada_realmente_empata(self):
+        liq, alvo, anos, aliq = 10_000.0, 13_000.0, 4.0, 0.175
+        r = taxa_reinvestimento_breakeven(liq, alvo, anos, com_ir=True, aliq_reinv=aliq)
+        lucro = liq * (1 + r / 100) ** anos - liq
+        valor_liquido = liq + lucro * (1 - aliq)
+        assert abs(valor_liquido - alvo) < 1e-6
+
+    def test_com_ir_exige_taxa_maior_que_sem_ir(self):
+        # Com IR sobre o ganho do reinvestimento, precisa de uma taxa BRUTA
+        # maior para entregar o mesmo valor líquido-alvo.
+        liq, alvo, anos = 10_000.0, 13_000.0, 4.0
+        r_sem_ir = taxa_reinvestimento_breakeven(liq, alvo, anos, com_ir=False)
+        r_com_ir = taxa_reinvestimento_breakeven(
+            liq, alvo, anos, com_ir=True, aliq_reinv=0.175
+        )
+        assert r_com_ir > r_sem_ir
+
+    def test_alvo_menor_que_liquido_retorna_taxa_negativa(self):
+        # Aguardar rende menos que o valor líquido já em mãos hoje — o
+        # breakeven é uma taxa NEGATIVA, ou seja, qualquer reinvestimento
+        # razoável (mesmo perto de 0%) já supera aguardar.
+        r = taxa_reinvestimento_breakeven(10_000.0, 9_000.0, 3.0)
+        assert r < 0
+
+    def test_alvo_nao_positivo_retorna_menos_infinito(self):
+        # Caso degenerado: aguardar renderia zero ou menos — indefinido em
+        # termos de "taxa de reinvestimento necessária" (sinaliza -inf).
+        r = taxa_reinvestimento_breakeven(10_000.0, 0.0, 3.0)
+        assert r == float("-inf")
+
+    def test_liquido_zero_retorna_nan(self):
+        assert math.isnan(taxa_reinvestimento_breakeven(0.0, 10_000.0, 3.0))
+
+    def test_anos_zero_retorna_nan(self):
+        assert math.isnan(taxa_reinvestimento_breakeven(10_000.0, 12_000.0, 0.0))
+
+    def test_alvo_maior_exige_taxa_maior(self):
+        r_baixo = taxa_reinvestimento_breakeven(10_000.0, 11_000.0, 3.0)
+        r_alto = taxa_reinvestimento_breakeven(10_000.0, 15_000.0, 3.0)
+        assert r_alto > r_baixo
 
 
 # ---------------------------------------------------------------------------
