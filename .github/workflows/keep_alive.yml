@@ -2,7 +2,11 @@ name: Keep-Alive do App
 
 on:
   schedule:
-    - cron: "0 */6 * * *"  # A cada 6 horas — mantém o Streamlit Community Cloud acordado
+    # A cada 10 min, 9h-19h59 BRT (12h-22h59 UTC), seg-sex — horário comercial,
+    # quando alguém tem mais chance de clicar no link (ex: LinkedIn). Mais
+    # execuções que um cron fixo de poucas em poucas horas, mas concentradas
+    # na janela que importa — nada desperdiçado de madrugada/fim de semana.
+    - cron: "*/10 12-22 * * 1-5"
   workflow_dispatch:        # Permite disparo manual pela aba Actions
 
 jobs:
