@@ -369,22 +369,62 @@ def serie_paradoxo(
 # ---------------------------------------------------------------------------
 
 
+def _fator_pu_ntnb_unitario(
+    taxa: float, anos: float, taxa_cupom_anual: float = 0.06
+) -> float:
+    """
+    PU por unidade de VNA (VNA=1) de um título com cupons semestrais e `anos`
+    restantes até o vencimento, descontado à taxa anual `taxa`.
+
+    Usado para reprecificar a MaM de títulos com Juros Semestrais pela duration
+    real, em vez do expoente cheio (T−N) que trata o título como zero-cupom.
+    O VNA cancela nas razões de MaM porque aparece como fator multiplicativo
+    comum tanto nos cupons (C = VNA×[(1+cupom)^0.5−1]) quanto no principal —
+    por isso esta função opera com VNA=1 e o resultado é uma razão pura.
+
+    Cupons espaçados uniformemente a cada `anos/n_cupons` (≈6 meses); para
+    `anos` não múltiplo exato de 0,5 o espaçamento se ajusta ligeiramente,
+    aproximação aceitável já que estas funções recebem apenas contagens de
+    anos, sem datas de calendário reais.
+    """
+    if anos <= 0:
+        return 1.0
+    cupom = (1 + taxa_cupom_anual) ** 0.5 - 1
+    n_cupons = max(1, round(anos / 0.5))
+    passo = anos / n_cupons
+    fator = 0.0
+    for i in range(1, n_cupons + 1):
+        t = i * passo
+        fluxo = cupom + (1.0 if i == n_cupons else 0.0)
+        fator += fluxo / (1 + taxa) ** t
+    return fator
+
+
 def retorno_mam_antecipado(
     taxa_compra: float,
     taxa_venda: float,
     anos_saida: float,
     anos_vencimento: float,
+    tem_cupom: bool = False,
 ) -> float:
     """
     Retorno de MaM ao vender antecipadamente — impacto puro da variação da taxa real.
 
-    O VNA (corrigido pelo IPCA) cancela algebraicamente na razão PU_mercado / PU_ideal:
+    Zero-cupom (tem_cupom=False) — o VNA (corrigido pelo IPCA) cancela algebricamente
+    na razão PU_mercado / PU_ideal:
 
         PU_ideal   = VNA_futuro / (1 + taxa_compra)^(T−N)
         PU_mercado = VNA_futuro / (1 + taxa_venda)^(T−N)
 
         Retorno = PU_mercado / PU_ideal − 1
                 = [(1 + taxa_compra) / (1 + taxa_venda)]^(T−N) − 1
+
+    Com cupom (tem_cupom=True) — para NTN-B/Pré com Juros Semestrais, o expoente
+    cheio (T−N) superestima a sensibilidade de preço: a duration efetiva é menor
+    que o prazo até o vencimento, porque parte do valor chega antes via cupons.
+    Reprecifica via _fator_pu_ntnb_unitario (mesma lógica de fluxo de caixa de
+    pu_ntnb, com VNA=1) nas duas taxas, com o mesmo prazo restante (T−N) em
+    ambas — o VNA ainda cancela na razão pelo mesmo motivo do caso zero-cupom.
 
     Consequência: o IPCA futuro NÃO entra na fórmula — ele é contexto macroeconômico
     que explica por que a taxa real mudou, mas não altera o cálculo diretamente.
@@ -395,11 +435,16 @@ def retorno_mam_antecipado(
     taxa_venda     : yield IPCA+ real de mercado projetado na data de saída
     anos_saida     : horizonte de venda antecipada (anos)
     anos_vencimento: prazo total restante do título a partir de hoje (anos)
+    tem_cupom      : True para títulos com Juros Semestrais (NTN-B/Pré)
     """
     T, N = anos_vencimento, anos_saida
     if N <= 0 or N >= T:
         return float("nan")
-    return ((1 + taxa_compra) / (1 + taxa_venda)) ** (T - N) * 100 - 100
+    if not tem_cupom:
+        return ((1 + taxa_compra) / (1 + taxa_venda)) ** (T - N) * 100 - 100
+    f_compra = _fator_pu_ntnb_unitario(taxa_compra, T - N)
+    f_venda = _fator_pu_ntnb_unitario(taxa_venda, T - N)
+    return (f_venda / f_compra) * 100 - 100
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +488,7 @@ def retorno_saida_antecipada(
     anos_saida: float,
     tipo: str,
     ipca: float = 0.0,
+    tem_cupom: bool = False,
 ) -> float:
     """
     Retorno nominal anualizado ao vender um título em anos_saida.
@@ -450,12 +496,25 @@ def retorno_saida_antecipada(
     Se anos_saida >= anos_total: retorno certo de carrego (sem exposição MaM).
     Se anos_saida < anos_total:  retorno ajustado pelo preço de mercado na saída.
 
-    Para Prefixado:
-        PU_H/PU_0 = (1+taxa_compra)^T / (1+taxa_venda)^(T-H)
-    Para IPCA+:
-        PU_H/PU_0 = (1+IPCA)^H × (1+taxa_compra)^T / (1+taxa_venda)^(T-H)
-    Para Selic:
-        Retorno ≈ taxa_compra (pós-fixado — taxa_venda não afeta preço)
+    Zero-cupom (tem_cupom=False):
+        Para Prefixado:
+            PU_H/PU_0 = (1+taxa_compra)^T / (1+taxa_venda)^(T-H)
+        Para IPCA+:
+            PU_H/PU_0 = (1+IPCA)^H × (1+taxa_compra)^T / (1+taxa_venda)^(T-H)
+        Para Selic:
+            Retorno ≈ taxa_compra (pós-fixado — taxa_venda não afeta preço)
+
+    Com cupom (tem_cupom=True, títulos com Juros Semestrais): o expoente cheio
+    T (no numerador implícito) / (T-H) superestima a sensibilidade de MaM, pois
+    trata o título como zero-cupom. Generaliza para
+        PU_H/PU_0 = _fator_pu_ntnb_unitario(taxa_venda, T-H) / _fator_pu_ntnb_unitario(taxa_compra, T)
+    (a mesma razão do caso zero-cupom, trocando 1/(1+r)^t por essa função de
+    fluxo de caixa) e, para IPCA+, mantém o fator (1+IPCA)^H que representa o
+    crescimento do VNA durante a posse.
+
+    Nota: os cupons recebidos em dinheiro entre a compra e a saída não são
+    somados ao retorno aqui — apenas o efeito de preço é modelado. O retorno
+    total real de títulos com cupom é maior do que o valor retornado.
     """
     H = anos_saida
     T = anos_total
@@ -472,12 +531,23 @@ def retorno_saida_antecipada(
         else:
             return (1 + ipca) * (1 + taxa_compra) - 1
 
+    if not tem_cupom:
+        if tipo == "pre":
+            ratio = (1 + taxa_compra) ** T / (1 + taxa_venda) ** (T - H)
+            return ratio ** (1 / H) - 1
+        else:
+            ratio = (
+                (1 + ipca) ** H * (1 + taxa_compra) ** T / (1 + taxa_venda) ** (T - H)
+            )
+            return ratio ** (1 / H) - 1
+
+    f_compra_total = _fator_pu_ntnb_unitario(taxa_compra, T)
+    f_venda_resto = _fator_pu_ntnb_unitario(taxa_venda, T - H)
     if tipo == "pre":
-        ratio = (1 + taxa_compra) ** T / (1 + taxa_venda) ** (T - H)
-        return ratio ** (1 / H) - 1
+        ratio = f_venda_resto / f_compra_total
     else:
-        ratio = (1 + ipca) ** H * (1 + taxa_compra) ** T / (1 + taxa_venda) ** (T - H)
-        return ratio ** (1 / H) - 1
+        ratio = (1 + ipca) ** H * f_venda_resto / f_compra_total
+    return ratio ** (1 / H) - 1
 
 
 def aliquota_ir_renda_fixa(horizonte_anos: float) -> float:
@@ -630,6 +700,7 @@ def analise_batalha(
     ip = ipca / 100
     ck = choque / 100
     sl = selic / 100
+    tem_cupom = "Juros Semestrais" in nome
 
     # Reinvestimento: título vence ANTES do horizonte do cliente.
     # IR aplicado dentro de retorno_hold_to_mat_reinvestido com prazo correto por fase.
@@ -662,9 +733,15 @@ def analise_batalha(
         )
     else:
         # Saída antecipada (H < T) ou H == T: MaM determina o retorno
-        r_adv = retorno_saida_antecipada(t, t + ck, anos_total, anos_saida, tipo, ip)
-        r_neu = retorno_saida_antecipada(t, t, anos_total, anos_saida, tipo, ip)
-        r_fav = retorno_saida_antecipada(t, t - ck, anos_total, anos_saida, tipo, ip)
+        r_adv = retorno_saida_antecipada(
+            t, t + ck, anos_total, anos_saida, tipo, ip, tem_cupom
+        )
+        r_neu = retorno_saida_antecipada(
+            t, t, anos_total, anos_saida, tipo, ip, tem_cupom
+        )
+        r_fav = retorno_saida_antecipada(
+            t, t - ck, anos_total, anos_saida, tipo, ip, tem_cupom
+        )
         if com_ir:
             r_adv = retorno_liquido_ir(r_adv, anos_saida)
             r_neu = retorno_liquido_ir(r_neu, anos_saida)

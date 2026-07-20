@@ -28,6 +28,7 @@ from core.financas import (
     aliquota_iof_renda_fixa,
     formatar_brl,
     retorno_mam_antecipado,
+    _fator_pu_ntnb_unitario,
     cupom_semestral,
     pu_ntnb,
     calcular_du,
@@ -209,6 +210,65 @@ class TestRetornoMaM:
         ganho = retorno_mam_antecipado(0.07, 0.06, 1.0, 5.0)
         perda = retorno_mam_antecipado(0.07, 0.08, 1.0, 5.0)
         assert ganho > 0 and perda < 0
+
+
+# ---------------------------------------------------------------------------
+# _fator_pu_ntnb_unitario — helper de reprecificação por duration real
+# ---------------------------------------------------------------------------
+
+
+class TestFatorPuNtnbUnitario:
+    def test_zero_anos_retorna_um(self):
+        assert _fator_pu_ntnb_unitario(0.07, 0.0) == 1.0
+
+    def test_decrescente_em_taxa(self):
+        # Preço cai quando a taxa sobe — sanity básico de precificação de bond
+        f_baixo = _fator_pu_ntnb_unitario(0.05, 10.0)
+        f_alto = _fator_pu_ntnb_unitario(0.09, 10.0)
+        assert f_alto < f_baixo
+
+    def test_positivo(self):
+        assert _fator_pu_ntnb_unitario(0.20, 15.0) > 0
+
+    def test_taxa_igual_cupom_proximo_de_um(self):
+        # Quando a taxa de desconto = taxa de cupom, o bond precifica perto do par (1.0)
+        f = _fator_pu_ntnb_unitario(0.06, 10.0, taxa_cupom_anual=0.06)
+        assert abs(f - 1.0) < 0.01
+
+
+# ---------------------------------------------------------------------------
+# MaM — Retorno de Saída Antecipada COM cupom (Juros Semestrais)
+# ---------------------------------------------------------------------------
+
+
+class TestRetornoMaMComCupom:
+    def test_taxa_igual_retorno_zero(self):
+        r = retorno_mam_antecipado(0.07, 0.07, 1.0, 5.0, tem_cupom=True)
+        assert abs(r) < 1e-6
+
+    def test_taxa_sobe_perde(self):
+        r = retorno_mam_antecipado(0.07, 0.09, 1.0, 5.0, tem_cupom=True)
+        assert r < 0
+
+    def test_taxa_cai_ganha(self):
+        r = retorno_mam_antecipado(0.07, 0.05, 1.0, 5.0, tem_cupom=True)
+        assert r > 0
+
+    def test_cupom_reduz_sensibilidade_vs_zero_cupom_perda(self):
+        # Achado B: título com cupom tem duration menor que o vencimento —
+        # a perda de MaM deve ser MENOR (em módulo) que a versão zero-cupom
+        # para o mesmo choque de taxa e mesmo prazo.
+        r_zero = retorno_mam_antecipado(0.07, 0.09, 1.0, 15.0, tem_cupom=False)
+        r_cupom = retorno_mam_antecipado(0.07, 0.09, 1.0, 15.0, tem_cupom=True)
+        assert r_zero < r_cupom < 0
+
+    def test_cupom_reduz_sensibilidade_vs_zero_cupom_ganho(self):
+        r_zero = retorno_mam_antecipado(0.07, 0.05, 1.0, 15.0, tem_cupom=False)
+        r_cupom = retorno_mam_antecipado(0.07, 0.05, 1.0, 15.0, tem_cupom=True)
+        assert 0 < r_cupom < r_zero
+
+    def test_saida_maior_vencimento_retorna_nan(self):
+        assert math.isnan(retorno_mam_antecipado(0.07, 0.07, 6.0, 5.0, tem_cupom=True))
 
 
 # ---------------------------------------------------------------------------
@@ -570,6 +630,69 @@ class TestRetornoSaidaAntecipada:
 
 
 # ---------------------------------------------------------------------------
+# Retorno de Saída Antecipada COM cupom (Juros Semestrais) — achado B
+# ---------------------------------------------------------------------------
+
+
+class TestRetornoSaidaAntecipadaComCupom:
+    def test_pre_taxa_sobe_perde_vs_neutro(self):
+        r_neutro = retorno_saida_antecipada(
+            0.14, 0.14, 10.0, 3.0, tipo="pre", tem_cupom=True
+        )
+        r_adverso = retorno_saida_antecipada(
+            0.14, 0.16, 10.0, 3.0, tipo="pre", tem_cupom=True
+        )
+        assert r_adverso < r_neutro
+
+    def test_pre_cupom_reduz_sensibilidade_vs_zero_cupom(self):
+        # A comparação correta é o DESVIO em relação ao próprio neutro (tv=tc)
+        # de cada versão, não o valor bruto — o neutro da versão com cupom não
+        # é igual a taxa_compra, porque cupons recebidos não são creditados
+        # (limitação já avisada na UI; ver disclaimer em telas/batalha.py).
+        tc, tv, T, H = 0.14, 0.16, 15.0, 2.0
+        delta_zero = retorno_saida_antecipada(
+            tc, tv, T, H, tipo="pre"
+        ) - retorno_saida_antecipada(tc, tc, T, H, tipo="pre")
+        delta_cupom = retorno_saida_antecipada(
+            tc, tv, T, H, tipo="pre", tem_cupom=True
+        ) - retorno_saida_antecipada(tc, tc, T, H, tipo="pre", tem_cupom=True)
+        # Mesmo choque de taxa e prazo: zero-cupom (duration = T) reage mais
+        # que a versão com cupom (duration efetiva < T).
+        assert delta_zero < 0 and delta_cupom < 0
+        assert abs(delta_cupom) < abs(delta_zero)
+
+    def test_ipca_cupom_reduz_sensibilidade_vs_zero_cupom(self):
+        tc, tv, T, H, ip = 0.07, 0.09, 15.0, 2.0, 0.05
+        delta_zero = retorno_saida_antecipada(
+            tc, tv, T, H, tipo="ipca_mais", ipca=ip
+        ) - retorno_saida_antecipada(tc, tc, T, H, tipo="ipca_mais", ipca=ip)
+        delta_cupom = retorno_saida_antecipada(
+            tc, tv, T, H, tipo="ipca_mais", ipca=ip, tem_cupom=True
+        ) - retorno_saida_antecipada(
+            tc, tc, T, H, tipo="ipca_mais", ipca=ip, tem_cupom=True
+        )
+        assert delta_zero < 0 and delta_cupom < 0
+        assert abs(delta_cupom) < abs(delta_zero)
+
+    def test_ipca_cupom_taxa_cai_ganha(self):
+        r = retorno_saida_antecipada(
+            0.07, 0.05, 10.0, 3.0, tipo="ipca_mais", ipca=0.05, tem_cupom=True
+        )
+        r_neutro = retorno_saida_antecipada(
+            0.07, 0.07, 10.0, 3.0, tipo="ipca_mais", ipca=0.05, tem_cupom=True
+        )
+        assert r > r_neutro
+
+    def test_hold_to_mat_ignora_tem_cupom(self):
+        # H >= T: retorno certo de carrego, tem_cupom não deve alterar o resultado
+        r_sem = retorno_saida_antecipada(0.14, 0.16, 5.0, 5.0, tipo="pre")
+        r_com = retorno_saida_antecipada(
+            0.14, 0.16, 5.0, 5.0, tipo="pre", tem_cupom=True
+        )
+        assert r_sem == r_com == 0.14
+
+
+# ---------------------------------------------------------------------------
 # Retorno Hold-to-Mat com Reinvestimento
 # ---------------------------------------------------------------------------
 
@@ -655,6 +778,31 @@ class TestAnaliseBatalha:
         res = analise_batalha("Teste", "pre", 14.0, 5.0, 3.0, 5.0)
         assert res["nome"] == "Teste"
         assert res["tipo"] == "pre"
+
+    # ---- Achado B: títulos "Juros Semestrais" usam duration real, não T-N ----
+    def test_juros_semestrais_detectado_pelo_nome_reduz_risco(self):
+        # Mesmos parâmetros, só o nome muda — "Juros Semestrais" deve ativar
+        # a reprecificação por fluxo de caixa (tem_cupom=True) e reduzir o
+        # risco de MaM em relação à aproximação zero-cupom.
+        kwargs = dict(
+            tipo="ipca_mais",
+            taxa=7.5,
+            anos_total=15.0,
+            anos_saida=2.0,
+            ipca=5.0,
+            choque=1.0,
+        )
+        res_zero = analise_batalha("Tesouro IPCA+ 2041", **kwargs)
+        res_cupom = analise_batalha("Tesouro IPCA+ com Juros Semestrais 2041", **kwargs)
+        assert res_cupom["risco_std"] < res_zero["risco_std"]
+
+    def test_juros_semestrais_pre_tambem_detectado(self):
+        kwargs = dict(tipo="pre", taxa=14.5, anos_total=12.0, anos_saida=2.0, ipca=5.0)
+        res_zero = analise_batalha("Tesouro Prefixado 2038", **kwargs)
+        res_cupom = analise_batalha(
+            "Tesouro Prefixado com Juros Semestrais 2038", **kwargs
+        )
+        assert res_cupom["risco_std"] < res_zero["risco_std"]
 
     # ---- Pré: adverso = taxa sobe → perde ----
     def test_pre_adverso_menor_que_neutro(self):

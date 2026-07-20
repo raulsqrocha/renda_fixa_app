@@ -499,6 +499,7 @@ que a taxa real mudou.
                         taxa_venda=_taxa_v,
                         anos_saida=float(prazo_saida),
                         anos_vencimento=float(t),
+                        tem_cupom="Juros Semestrais" in ativo,
                     )
                     valores.append("—" if ret != ret else f"{ret:+.2f}%")
                 resultados[nome_curto] = valores
