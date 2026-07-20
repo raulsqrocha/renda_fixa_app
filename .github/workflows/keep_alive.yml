@@ -1,0 +1,19 @@
+name: Keep-Alive do App
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"  # A cada 6 horas — mantém o Streamlit Community Cloud acordado
+  workflow_dispatch:        # Permite disparo manual pela aba Actions
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Acessar o app para evitar hibernação
+        run: |
+          echo "Pingando https://fixacf.streamlit.app ..."
+          status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 -L https://fixacf.streamlit.app/)
+          echo "Status HTTP: $status"
+          if [ "$status" -ge 400 ]; then
+            echo "::warning::App respondeu com status $status — pode estar hibernando ou fora do ar."
+          fi
