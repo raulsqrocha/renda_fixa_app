@@ -239,7 +239,7 @@ def render():
 
         st.dataframe(
             pd.DataFrame(rows),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
         _mult_real = (1 + taxa_atual_pct / 100) ** anos_restantes
@@ -250,7 +250,7 @@ def render():
         )
 
     fig_cen = grafico_cenarios(cenarios, anos_restantes, valor_sim)
-    st.plotly_chart(fig_cen, use_container_width=True, theme=None)
+    st.plotly_chart(fig_cen, width="stretch", theme=None)
 
     st.divider()
 
@@ -405,7 +405,7 @@ que a taxa real mudou.
             )
             df_edit = st.data_editor(
                 _CENARIOS_PADRAO.copy(),
-                use_container_width=True,
+                width="stretch",
                 num_rows="fixed",
                 hide_index=True,
                 disabled=["Cenário"],
@@ -511,7 +511,7 @@ que a taxa real mudou.
         )
 
         st.markdown(f"**Impacto de MaM por Cenário — Saída em {prazo_saida} anos:**")
-        st.dataframe(styled, use_container_width=True, hide_index=True)
+        st.dataframe(styled, width="stretch", hide_index=True)
 
         st.caption(
             "Retorno calculado sobre o preço ideal de carrego na data de saída. "
@@ -620,7 +620,7 @@ no futuro — cenário positivo para quem detém títulos longos.
                 di_inputs.append({"vencimento": venc, "taxa": taxa})
 
         fig_di = grafico_curva_di(di_inputs)
-        st.plotly_chart(fig_di, use_container_width=True, theme=None)
+        st.plotly_chart(fig_di, width="stretch", theme=None)
 
         st.caption(
             "⚠️ As taxas acima são inseridas manualmente. "
@@ -637,7 +637,7 @@ no futuro — cenário positivo para quem detém títulos longos.
 
         with col_h1:
             fig_ipca = grafico_ipca_historico(df_ipca)
-            st.plotly_chart(fig_ipca, use_container_width=True, theme=None)
+            st.plotly_chart(fig_ipca, width="stretch", theme=None)
 
         with col_h2:
             st.markdown("### Marcos Históricos")
@@ -678,7 +678,7 @@ seu poder de compra em **todos** esses cenários — é exatamente para isso que
                 df_display[["Mês/Ano", "IPCA (%)"]].sort_values(
                     "Mês/Ano", ascending=False
                 ),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 height=300,
             )

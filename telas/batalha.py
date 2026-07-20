@@ -616,7 +616,7 @@ def render():
             st.dataframe(
                 pd.DataFrame(rows_exp),
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 height=220,
             )
 
@@ -767,13 +767,11 @@ def render():
     with col_g1:
         st.plotly_chart(
             grafico_markowitz(analises, carteira_mix=mix, portfolios_mc=portfolios_mc),
-            use_container_width=True,
+            width="stretch",
             theme=None,
         )
     with col_g2:
-        st.plotly_chart(
-            grafico_cenarios_batalha(analises), use_container_width=True, theme=None
-        )
+        st.plotly_chart(grafico_cenarios_batalha(analises), width="stretch", theme=None)
 
     # -----------------------------------------------------------------------
     # Análise por Horizonte
@@ -807,7 +805,7 @@ def render():
 
     st.plotly_chart(
         grafico_retorno_por_horizonte(_res_horizonte, horizonte),
-        use_container_width=True,
+        width="stretch",
         theme=None,
     )
     st.caption(
@@ -947,7 +945,7 @@ def render():
     fmt["Score"] = lambda v: f"{v:.2f}"
 
     styled = df_tab.style.apply(_cor, axis=1).format(fmt)
-    st.dataframe(styled, use_container_width=True, hide_index=True)
+    st.dataframe(styled, width="stretch", hide_index=True)
 
     vf_neutro = capital * (1 + vencedor["ret_neu"] / 100) ** horizonte
     st.info(

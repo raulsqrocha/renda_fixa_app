@@ -381,7 +381,7 @@ def render():
             _dc_df_p.insert(
                 0, "🏆", ["🏆" if r["Produto"] == _dc_mp else "" for r in _dc_rows_p]
             )
-            st.dataframe(_dc_df_p, hide_index=True, use_container_width=True)
+            st.dataframe(_dc_df_p, hide_index=True, width="stretch")
 
             _dc_anos_r = list(range(0, _dc_prazo_p + 1))
             _dc_fig_p = go.Figure()
@@ -429,7 +429,7 @@ def render():
                 margin=dict(t=10, b=60, l=75, r=20),
                 height=320,
             )
-            st.plotly_chart(_dc_fig_p, use_container_width=True, theme=None)
+            st.plotly_chart(_dc_fig_p, width="stretch", theme=None)
 
         with _dtab_rev:
             _dtr1, _dtr2 = st.columns(2)
@@ -486,7 +486,7 @@ def render():
             _dc_df_r.insert(
                 0, "🏆", ["🏆" if r["Produto"] == _dc_mr else "" for r in _dc_rows_r]
             )
-            st.dataframe(_dc_df_r, hide_index=True, use_container_width=True)
+            st.dataframe(_dc_df_r, hide_index=True, width="stretch")
 
             if _dc_rows_r:
                 _dc_best = _dc_rows_r[0]
@@ -906,7 +906,7 @@ def render():
                         xanchor="center",
                     ),
                 )
-                st.plotly_chart(_fig_t, use_container_width=True, theme=None)
+                st.plotly_chart(_fig_t, width="stretch", theme=None)
             with _da2:
                 _prazo_order = [
                     k
@@ -936,7 +936,7 @@ def render():
                         xanchor="center",
                     ),
                 )
-                st.plotly_chart(_fig_p, use_container_width=True, theme=None)
+                st.plotly_chart(_fig_p, width="stretch", theme=None)
 
         # ---- Recomendação de Diversificação ----------------------------------------
         if len(portfolio) >= 1:
@@ -1102,7 +1102,7 @@ def render():
         st.dataframe(
             pd.DataFrame(rows_p),
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "Saúde": st.column_config.ProgressColumn(
                     "Saúde",
@@ -1393,7 +1393,7 @@ def render():
                     legend=dict(orientation="h", y=-0.20, x=0),
                     height=290,
                 )
-                st.plotly_chart(fig_proj, use_container_width=True, theme=None)
+                st.plotly_chart(fig_proj, width="stretch", theme=None)
             with col_sc:
                 st.metric(
                     "Saúde da Posição",
@@ -1405,9 +1405,7 @@ def render():
                         "**70–100 🟢 Saudável · 40–69 🟡 Atenção · 0–39 🔴 Risco**"
                     ),
                 )
-                st.plotly_chart(
-                    grafico_score(score), use_container_width=True, theme=None
-                )
+                st.plotly_chart(grafico_score(score), width="stretch", theme=None)
 
             st.info(
                 f"📅 **Vencimento:** {data_vencimento.strftime('%d/%m/%Y')}  ·  "
@@ -1565,9 +1563,7 @@ def render():
                         "**70–100 🟢 Saudável · 40–69 🟡 Atenção · 0–39 🔴 Risco**"
                     ),
                 )
-                st.plotly_chart(
-                    grafico_score(score), use_container_width=True, theme=None
-                )
+                st.plotly_chart(grafico_score(score), width="stretch", theme=None)
 
             # Gráfico do Paradoxo
             st.markdown("---")
@@ -1593,7 +1589,7 @@ def render():
                         data_vencimento=data_vencimento,
                         datas_cupom=cpns_hoje if tem_cupom else None,
                     ),
-                    use_container_width=True,
+                    width="stretch",
                     theme=None,
                 )
 
@@ -2045,7 +2041,7 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
                     showlegend=False,
                     height=260,
                 )
-                st.plotly_chart(fig_pie, use_container_width=True, theme=None)
+                st.plotly_chart(fig_pie, width="stretch", theme=None)
 
             with col_g2:
                 st.markdown("**Saúde por posição**")
@@ -2071,7 +2067,7 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
                     margin=dict(t=10, b=10, l=130, r=20),
                     height=260,
                 )
-                st.plotly_chart(fig_bar, use_container_width=True, theme=None)
+                st.plotly_chart(fig_bar, width="stretch", theme=None)
 
             # MaM vs Carrego por posição
             st.markdown("**MaM atual vs. Carrego no vencimento**")
@@ -2098,7 +2094,7 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
                 height=300,
                 yaxis=dict(tickprefix="R$ ", separatethousands=True),
             )
-            st.plotly_chart(fig_cmp, use_container_width=True, theme=None)
+            st.plotly_chart(fig_cmp, width="stretch", theme=None)
 
             # Tabela detalhada
             st.markdown("**Detalhamento por posição**")
@@ -2118,7 +2114,7 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
                     for s in _port_stats
                 ]
             )
-            st.dataframe(_df_tab, hide_index=True, use_container_width=True)
+            st.dataframe(_df_tab, hide_index=True, width="stretch")
 
             # Visão consolidada por título (só aparece quando há aportes múltiplos)
             _titulos_unicos = {s["nome"] for s in _port_stats}
@@ -2159,9 +2155,7 @@ Vender agora cristaliza o prejuízo. Aguardar o vencimento o elimina completamen
                             "No Vencimento": formatar_brl(d["_carrego"]),
                         }
                     )
-                st.dataframe(
-                    pd.DataFrame(_rows_cons), hide_index=True, use_container_width=True
-                )
+                st.dataframe(pd.DataFrame(_rows_cons), hide_index=True, width="stretch")
 
     # =========================== ABA 4: UTILITÁRIOS ==========================
     with tab_util:

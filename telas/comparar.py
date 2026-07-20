@@ -298,7 +298,7 @@ def render():
             }
         )
 
-    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
     # -----------------------------------------------------------------------
     # Gráfico de barras
@@ -339,7 +339,7 @@ def render():
         height=360,
         showlegend=False,
     )
-    st.plotly_chart(fig, use_container_width=True, theme=None)
+    st.plotly_chart(fig, width="stretch", theme=None)
 
     # -----------------------------------------------------------------------
     # Taxa equivalente
