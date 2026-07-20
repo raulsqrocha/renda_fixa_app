@@ -9,9 +9,11 @@ Pré-Fixado, CDB, LCI, LCA) ou vista completa com o Gráfico do Paradoxo
 import calendar as _cal
 from datetime import date
 
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from core.dados import buscar_historico_titulos_tesouro, historico_titulo
 from core.financas import (
     aliquota_iof_renda_fixa,
     formatar_brl,
@@ -28,6 +30,25 @@ def _serie_cached(
 ):
     return serie_paradoxo(
         vna, taxa_contratada, taxa_mercado, compra, vencimento, qtd, tem_cupom
+    )
+
+
+def _mam_real(titulo: str, data_compra: date, quantidade: float) -> pd.DataFrame:
+    """
+    MaM real observada (Tesouro Transparente) para `titulo` entre a compra e
+    hoje. Retorna DataFrame vazio se não houver histórico disponível — o
+    Tesouro Direto adiciona/descontinua títulos ao longo do tempo, então nem
+    toda posição tem dado real cobrindo todo o período desde a compra.
+    """
+    df_hist = buscar_historico_titulos_tesouro()
+    df_titulo = historico_titulo(df_hist, titulo, data_compra, date.today())
+    if df_titulo.empty:
+        return df_titulo
+    return pd.DataFrame(
+        {
+            "data": df_titulo["data"],
+            "mam": quantidade * df_titulo["pu_compra"],
+        }
     )
 
 
@@ -366,6 +387,7 @@ def renderizar(pos: dict, calc: dict, vna: float) -> None:
                 resultado["quantidade"],
                 tem_cupom,
             )
+            df_mam_real = _mam_real(titulo_sel, data_compra, resultado["quantidade"])
 
         with col_graf:
             st.plotly_chart(
@@ -374,10 +396,19 @@ def renderizar(pos: dict, calc: dict, vna: float) -> None:
                     data_compra=data_compra,
                     data_vencimento=data_vencimento,
                     datas_cupom=cpns_hoje if tem_cupom else None,
+                    df_historico_real=df_mam_real,
                 ),
                 width="stretch",
                 theme=None,
             )
+            if not df_mam_real.empty:
+                _desde = df_mam_real["data"].min().strftime("%d/%m/%Y")
+                st.caption(
+                    f"📡 Linha branca: MaM **real** observada no Tesouro Transparente, "
+                    f"disponível desde {_desde}. Antes disso e após hoje, a linha vermelha "
+                    "é uma projeção ilustrativa (o Tesouro Direto adiciona e descontinua "
+                    "títulos ao longo do tempo, então nem todo período tem dado real)."
+                )
 
         with col_leg:
             st.markdown("**O que estou vendo?**")

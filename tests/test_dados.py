@@ -7,11 +7,13 @@ import pandas as pd
 
 from core.dados import (
     VNA_BASE_DEZ2014,
+    buscar_historico_titulos_tesouro,
     buscar_ipca_bcb,
     buscar_selic_meta_bcb,
     buscar_selic_na_data,
     buscar_titulos_tesouro,
     construir_nome_titulo,
+    historico_titulo,
     _get_com_retry,
     _ipca_fallback,
     _TAXAS_REF,
@@ -600,6 +602,100 @@ class TestBuscarTitulosTesouro:
         nomes = set(df["nome"])
         assert "Tesouro Selic 2031" in nomes
         assert not any("Futuro" in n for n in nomes)
+
+
+# ---------------------------------------------------------------------------
+# buscar_historico_titulos_tesouro / historico_titulo
+# ---------------------------------------------------------------------------
+
+_CSV_HISTORICO = (
+    "Tipo Titulo;Data Vencimento;Data Base;"
+    "Taxa Compra Manha;Taxa Venda Manha;PU Compra Manha;PU Venda Manha\n"
+    "Tesouro IPCA+;15/08/2032;10/01/2026;7,50;7,52;2000,00;1998,00\n"
+    "Tesouro IPCA+;15/08/2032;15/03/2026;7,60;7,62;2020,00;2018,00\n"
+    "Tesouro IPCA+;15/08/2032;17/07/2026;7,93;7,95;2090,00;2088,00\n"
+    "Tesouro Selic;01/03/2031;17/07/2026;14,75;14,77;13456,78;13450,00\n"
+)
+
+
+class TestBuscarHistoricoTitulosTesouro:
+    def test_sucesso_retorna_todas_as_datas_base(self):
+        mock_resp = MagicMock()
+        mock_resp.text = _CSV_HISTORICO
+        with patch("core.dados.requests.get", return_value=mock_resp):
+            df = buscar_historico_titulos_tesouro()
+        assert isinstance(df, pd.DataFrame)
+        assert {"nome", "data", "pu_compra", "taxa_compra"}.issubset(df.columns)
+        # 3 linhas de IPCA+ 2032 (datas distintas) + 1 de Selic 2031
+        assert len(df[df["nome"] == "Tesouro IPCA+ 2032"]) == 3
+        assert len(df[df["nome"] == "Tesouro Selic 2031"]) == 1
+
+    def test_ordenado_por_nome_e_data(self):
+        mock_resp = MagicMock()
+        mock_resp.text = _CSV_HISTORICO
+        with patch("core.dados.requests.get", return_value=mock_resp):
+            df = buscar_historico_titulos_tesouro()
+        sub = df[df["nome"] == "Tesouro IPCA+ 2032"]
+        assert list(sub["data"]) == sorted(sub["data"])
+
+    def test_pu_e_taxa_convertidos_corretamente(self):
+        mock_resp = MagicMock()
+        mock_resp.text = _CSV_HISTORICO
+        with patch("core.dados.requests.get", return_value=mock_resp):
+            df = buscar_historico_titulos_tesouro()
+        linha = df[
+            (df["nome"] == "Tesouro IPCA+ 2032")
+            & (df["data"] == pd.Timestamp("2026-07-17"))
+        ].iloc[0]
+        assert linha["pu_compra"] == 2090.00
+        assert linha["taxa_compra"] == 7.93
+
+    def test_exception_retorna_dataframe_vazio(self):
+        with patch("core.dados.requests.get", side_effect=Exception("timeout")):
+            df = buscar_historico_titulos_tesouro()
+        assert isinstance(df, pd.DataFrame)
+        assert df.empty
+
+    def test_titulo_sem_historico_nao_aparece(self):
+        mock_resp = MagicMock()
+        mock_resp.text = _CSV_HISTORICO
+        with patch("core.dados.requests.get", return_value=mock_resp):
+            df = buscar_historico_titulos_tesouro()
+        assert "Tesouro Prefixado 2029" not in set(df["nome"])
+
+
+class TestHistoricoTitulo:
+    def _df(self):
+        mock_resp = MagicMock()
+        mock_resp.text = _CSV_HISTORICO
+        with patch("core.dados.requests.get", return_value=mock_resp):
+            return buscar_historico_titulos_tesouro()
+
+    def test_filtra_por_nome(self):
+        df = historico_titulo(
+            self._df(), "Tesouro IPCA+ 2032", date(2026, 1, 1), date(2026, 12, 31)
+        )
+        assert set(df["nome"]) == {"Tesouro IPCA+ 2032"}
+        assert len(df) == 3
+
+    def test_filtra_por_janela_de_datas(self):
+        # Só as duas primeiras datas (10/01 e 15/03) caem na janela
+        df = historico_titulo(
+            self._df(), "Tesouro IPCA+ 2032", date(2026, 1, 1), date(2026, 4, 1)
+        )
+        assert len(df) == 2
+
+    def test_dataframe_vazio_retorna_vazio(self):
+        vazio = pd.DataFrame()
+        assert historico_titulo(
+            vazio, "Tesouro IPCA+ 2032", date(2026, 1, 1), date(2026, 12, 31)
+        ).empty
+
+    def test_titulo_inexistente_retorna_vazio(self):
+        df = historico_titulo(
+            self._df(), "Tesouro Inexistente 2099", date(2026, 1, 1), date(2026, 12, 31)
+        )
+        assert df.empty
 
 
 # ---------------------------------------------------------------------------

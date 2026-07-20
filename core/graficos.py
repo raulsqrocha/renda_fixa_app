@@ -89,14 +89,24 @@ def grafico_paradoxo(
     data_compra: date | None = None,
     data_vencimento: date | None = None,
     datas_cupom: list | None = None,
+    df_historico_real: pd.DataFrame | None = None,
 ) -> go.Figure:
     """
     Plota o paradoxo da renda fixa:
-      - Linha vermelha tracejada → MaM (volatilidade percebida)
+      - Linha vermelha tracejada → MaM projetada/simulada (volatilidade percebida)
       - Linha verde sólida       → Carrego (segurança real até o vencimento)
+      - Linha branca sólida (opcional) → MaM REAL observada (Tesouro Transparente)
     Timeline opcional: data_compra, data_vencimento, próximo cupom.
+
+    df_historico_real : DataFrame opcional com colunas "data" e "mam" — MaM
+        real observada, sobreposta como linha distinta sobre a simulação.
+        Cobre só o período com dado real disponível, que pode ser mais curto
+        que data_compra→hoje (o Tesouro Direto adiciona/descontinua títulos
+        ao longo do tempo). Quando fornecido (e não vazio), a linha vermelha
+        é relabelada para deixar claro que é projeção, não dado observado.
     """
     fig = go.Figure()
+    tem_historico_real = df_historico_real is not None and not df_historico_real.empty
 
     # Área de preenchimento entre as curvas (zona de divergência percebida)
     fig.add_trace(
@@ -111,14 +121,16 @@ def grafico_paradoxo(
         )
     )
 
-    # Linha MaM — vermelha tracejada
+    # Linha MaM — vermelha tracejada (simulação/projeção)
     fig.add_trace(
         go.Scatter(
             x=df["data"],
             y=df["mam"],
-            name="Marcação a Mercado (MaM)",
+            name="MaM Projetada (simulação)"
+            if tem_historico_real
+            else "Marcação a Mercado (MaM)",
             line=dict(color=VERMELHO, dash="dash", width=2),
-            hovertemplate="<b>MaM</b>: R$ %{y:,.2f}<br>%{x|%d/%m/%Y}<extra></extra>",
+            hovertemplate="<b>MaM projetada</b>: R$ %{y:,.2f}<br>%{x|%d/%m/%Y}<extra></extra>",
         )
     )
 
@@ -132,6 +144,18 @@ def grafico_paradoxo(
             hovertemplate="<b>Carrego</b>: R$ %{y:,.2f}<br>%{x|%d/%m/%Y}<extra></extra>",
         )
     )
+
+    # Linha MaM REAL — branca sólida, sobreposta quando há histórico disponível
+    if tem_historico_real and df_historico_real is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=df_historico_real["data"],
+                y=df_historico_real["mam"],
+                name="MaM Real Observada",
+                line=dict(color=TEXTO, width=2.5),
+                hovertemplate="<b>MaM real</b>: R$ %{y:,.2f}<br>%{x|%d/%m/%Y}<extra></extra>",
+            )
+        )
 
     # Anotação na zona de pânico (1/4 do caminho)
     # yshift (pixels, independente da escala do eixo Y) afasta o rótulo da linha —

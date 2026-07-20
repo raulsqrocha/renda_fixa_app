@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 from core.graficos import (
     AZUL,
     LARANJA,
+    TEXTO,
     VERDE,
     VERMELHO,
     grafico_cenarios_batalha,
@@ -185,6 +186,35 @@ class TestGraficoParadoxo:
         fig = grafico_paradoxo(df, datas_cupom=[prox_cupom])
         textos = [a.text for a in fig.layout.annotations]
         assert any("Cupom" in t for t in textos)
+
+    # ---- df_historico_real (MaM real observada) ----
+    def test_sem_historico_real_mantem_label_original(self):
+        fig = grafico_paradoxo(_df_paradoxo(), df_historico_real=None)
+        assert fig.data[1].name == "Marcação a Mercado (MaM)"
+        assert len(fig.data) == 3
+
+    def test_historico_real_vazio_nao_adiciona_trace(self):
+        fig = grafico_paradoxo(_df_paradoxo(), df_historico_real=pd.DataFrame())
+        assert len(fig.data) == 3
+
+    def test_historico_real_adiciona_quarto_trace_branco(self):
+        df_real = pd.DataFrame(
+            {
+                "data": pd.date_range("2020-01-01", periods=5, freq="D"),
+                "mam": [10_000.0, 10_050.0, 10_020.0, 10_080.0, 10_100.0],
+            }
+        )
+        fig = grafico_paradoxo(_df_paradoxo(), df_historico_real=df_real)
+        assert len(fig.data) == 4
+        assert fig.data[3].name == "MaM Real Observada"
+        assert fig.data[3].line.color == TEXTO
+
+    def test_historico_real_relabela_linha_projetada(self):
+        df_real = pd.DataFrame(
+            {"data": pd.date_range("2020-01-01", periods=3, freq="D"), "mam": [1, 2, 3]}
+        )
+        fig = grafico_paradoxo(_df_paradoxo(), df_historico_real=df_real)
+        assert fig.data[1].name == "MaM Projetada (simulação)"
 
 
 # ---------------------------------------------------------------------------

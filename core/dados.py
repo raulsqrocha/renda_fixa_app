@@ -688,6 +688,83 @@ def _titulos_fallback() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
+@st.cache_data(ttl=3600 * 24, show_spinner=False)
+def buscar_historico_titulos_tesouro() -> pd.DataFrame:
+    """
+    Busca o histórico DIÁRIO completo (todas as "Data Base") de PU/taxa de
+    todos os títulos no CSV do Tesouro Transparente — mesmo arquivo usado por
+    buscar_titulos_tesouro(), mas sem filtrar para a data mais recente.
+
+    Usado para sobrepor a MaM real observada no Gráfico do Paradoxo, em vez
+    de mostrar apenas a simulação estocástica. Retorna DataFrame vazio se a
+    API falhar — quem chama deve tratar isso como "sem histórico disponível"
+    e seguir só com a simulação (comportamento já existente).
+
+    Cache de 24h: o arquivo cresce uma linha por título por dia útil — pouco
+    ganho em atualizar com mais frequência, e o download é pesado (~14 MB).
+    Nem todo título tem histórico desde sempre: o Tesouro Direto adiciona e
+    descontinua títulos ao longo do tempo, então um título "2032" pode só
+    ter dados reais a partir de alguns meses atrás, não desde 2015.
+    """
+    try:
+        from io import StringIO
+
+        resp = _get_com_retry(URL_TESOURO_CSV, timeout=60)
+        df_raw = pd.read_csv(
+            StringIO(resp.text),
+            sep=";",
+            decimal=",",
+            dayfirst=True,
+            parse_dates=["Data Vencimento", "Data Base"],
+        )
+        df_raw.columns = df_raw.columns.str.strip()
+        df_raw = df_raw[df_raw["Data Vencimento"].notna()].copy()
+        df_raw = df_raw[~df_raw["Tipo Titulo"].str.contains("IGPM", na=False)]
+
+        def _nome_de_linha(row: pd.Series) -> str:
+            return (
+                construir_nome_titulo(
+                    str(row["Tipo Titulo"]), row["Data Vencimento"].year
+                )
+                or ""
+            )
+
+        df_raw["nome"] = df_raw.apply(_nome_de_linha, axis=1)
+        nomes_validos = set(TITULOS_CONFIG) | set(TITULOS_BATALHA)
+        df_raw = df_raw[df_raw["nome"].isin(nomes_validos)]
+
+        def _f(v):
+            try:
+                return float(str(v).replace(",", ".").replace(" ", "")) or 0.0
+            except Exception:
+                return 0.0
+
+        df_out = pd.DataFrame(
+            {
+                "nome": df_raw["nome"].to_numpy(),
+                "data": df_raw["Data Base"].to_numpy(),
+                "pu_compra": df_raw["PU Compra Manha"].apply(_f).to_numpy(),
+                "taxa_compra": df_raw["Taxa Compra Manha"].apply(_f).to_numpy(),
+            }
+        )
+        return df_out.sort_values(["nome", "data"]).reset_index(drop=True)
+
+    except Exception as e:
+        _log.warning("Histórico do Tesouro Direto indisponível (%s)", e)
+        return pd.DataFrame()
+
+
+def historico_titulo(
+    df_historico: pd.DataFrame, nome_titulo: str, desde: date, ate: date
+) -> pd.DataFrame:
+    """Filtra o histórico completo para um título e uma janela de datas."""
+    if df_historico.empty:
+        return df_historico
+    df = df_historico[df_historico["nome"] == nome_titulo]
+    desde_ts, ate_ts = pd.Timestamp(desde), pd.Timestamp(ate)
+    return df[(df["data"] >= desde_ts) & (df["data"] <= ate_ts)].reset_index(drop=True)
+
+
 def montar_catalogo_batalha(df_titulos: pd.DataFrame, selic_projetada: float) -> list:
     """
     Monta catálogo dinâmico de todos os títulos para a tela 'Qual Ativo Escolher?'.
