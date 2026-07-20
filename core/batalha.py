@@ -1,8 +1,14 @@
 """
 Funções de portfólio para a tela "Qual Ativo Escolher?".
 
-Separadas de core/financas.py por serem exclusivas da análise de fronteira
-eficiente (Markowitz) — não fazem parte da matemática financeira central.
+Separadas de core/financas.py por serem exclusivas da análise de dispersão
+retorno × risco de cenário — não fazem parte da matemática financeira central.
+
+Nota: apesar do nome "gerar_portfolios_aleatorios" evocar Markowitz, os 3
+cenários (adverso/neutro/favorável) aplicam o MESMO choque macro a todos os
+ativos (correlação = 1) — não há matriz de covariância real, então não há
+ganho de diversificação no sentido clássico. Ver docstring de
+core.graficos.grafico_markowitz para o disclaimer completo.
 """
 
 from typing import TypedDict
@@ -34,7 +40,7 @@ def gerar_portfolios_aleatorios(
 ) -> list[PortfolioAleatorio]:
     """
     Gera n portfólios aleatórios via amostragem Dirichlet (Monte Carlo).
-    Usado para plotar a nuvem de pontos da fronteira eficiente de Markowitz.
+    Usado para plotar a nuvem de pontos do gráfico de dispersão retorno × risco.
     """
     k = len(analises)
     if k < 2:

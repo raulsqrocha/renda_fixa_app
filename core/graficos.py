@@ -601,10 +601,16 @@ def grafico_markowitz(
     analises: list, carteira_mix: dict | None = None, portfolios_mc: list | None = None
 ) -> go.Figure:
     """
-    Fronteira de Markowitz educacional: Retorno Esperado vs. Risco de MaM.
+    Dispersão Retorno × Risco de Cenário (MaM) — não é uma fronteira de Markowitz
+    de verdade.
 
-    Cada ponto = um título. A fronteira eficiente teórica é desenhada como curva
-    de referência — pontos acima/esquerda dela são mais eficientes.
+    Cada ponto = um título; "risco" é o desvio-padrão dos 3 cenários (adverso/
+    neutro/favorável), todos sob o MESMO choque macro (correlação = 1 entre
+    ativos). Sem covariância real entre ativos não há ganho de diversificação
+    no sentido de Markowitz — misturar dois títulos aqui é uma interpolação
+    linear entre eles, não uma fronteira convexa genuína. A curva pontilhada
+    é só uma referência visual conectando os pontos extremos, não é derivada
+    de uma otimização de carteira real.
     """
     fig = go.Figure()
 
@@ -627,22 +633,24 @@ def grafico_markowitz(
             )
         )
 
-    # Fronteira eficiente teórica: parábola de (min_risco, min_ret) → (max_risco, max_ret)
+    # Curva de referência (min_risco, min_ret) → (max_risco, max_ret) — puramente
+    # visual, NÃO é uma fronteira eficiente derivada de covariância real (ver
+    # docstring da função). Ajuda a orientar o olho, não representa otimização.
     if len(xs) >= 2:
         x0, x1 = min(xs), max(xs)
         y0 = min(ys)
         y1 = max(ys)
-        # Curva convexa via quadrática paramétrica
+        # Curva convexa via quadrática paramétrica (decorativa)
         ts = np.linspace(0, 1, 80)
         xf = x0 + (x1 - x0) * ts
-        yf = y0 + (y1 - y0) * (ts**0.65)  # convexa — típica de Markowitz
+        yf = y0 + (y1 - y0) * (ts**0.65)
         fig.add_trace(
             go.Scatter(
                 x=xf,
                 y=yf,
                 mode="lines",
                 line=dict(color="rgba(250,250,250,0.18)", dash="dot", width=2),
-                name="Fronteira Eficiente (ref.)",
+                name="Curva de referência (ilustrativa)",
                 hoverinfo="skip",
             )
         )
@@ -722,9 +730,7 @@ def grafico_markowitz(
         )
 
     fig.update_layout(
-        **_layout_base(
-            "Fronteira de Markowitz — Retorno vs. Risco de MaM", yaxis_prefix=""
-        )
+        **_layout_base("Dispersão Retorno × Risco de Cenário (MaM)", yaxis_prefix="")
     )
     fig.update_layout(
         xaxis=dict(

@@ -170,7 +170,7 @@ def _insight_texto(w: dict, horizonte: int, ipca: float, com_ir: bool) -> str:
 
 
 def render():
-    """Tela 2 — Qual Ativo Escolher?: comparativo de cenários, Markowitz e retorno por horizonte."""
+    """Tela 2 — Qual Ativo Escolher?: comparativo de cenários, dispersão risco/retorno e retorno por horizonte."""
     st.session_state["_page_id"] = "batalha"
 
     # Carrega preferências salvas antes de qualquer widget
@@ -761,7 +761,7 @@ def render():
     st.divider()
 
     # -----------------------------------------------------------------------
-    # Fronteira de Markowitz + Barras de Cenário
+    # Dispersão Risco × Retorno + Barras de Cenário
     # -----------------------------------------------------------------------
     col_g1, col_g2 = st.columns(2)
     with col_g1:
@@ -879,7 +879,7 @@ def render():
             f"⭐ <strong>Carteira Mista sugerida:</strong> "
             f"<strong>{wp_pct}% {nome_p}</strong> (oportunidade/retorno) + "
             f"<strong>{wl_pct}% {nome_l}</strong> (liquidez/reserva). "
-            f"O ponto ⭐ no gráfico de Markowitz acima demonstra que essa combinação "
+            f"O ponto ⭐ no gráfico de dispersão acima demonstra que essa combinação "
             f"reduz a dispersão de cenários em <strong>{reducao_risco:.3f} p.p.</strong> "
             f"mantendo retorno competitivo de <strong>{mix['ret_neu']:.2f}% a.a.</strong>. "
             f"Inclua um Tesouro Selic na seleção para ativar essa análise."
