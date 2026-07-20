@@ -13,6 +13,7 @@ from core.dados import timestamp_ultima_atualizacao, chave_cache_mercado
 from core.financas import (
     aliquota_ir_renda_fixa,
     formatar_brl,
+    taxa_poupanca_anual,
 )
 from core.graficos import _aplicar_tema
 from core.persistencia import carregar, salvar, inicializar_session
@@ -118,6 +119,10 @@ def render():
             help="Taxa Selic média esperada no período.",
             key="cmp_selic",
         )
+        st.caption(
+            "💡 A Poupança usa esta mesma Selic (regra oficial: 0,5% a.m. se "
+            "Selic > 8,5% a.a., senão 70% da Selic — TR considerada 0%)."
+        )
 
     with col_i3:
         st.markdown("**Produtos Bancários**")
@@ -186,6 +191,10 @@ def render():
     ret_lci = (1 + taxa_lci / 100) ** H - 1
     ret_lca = (1 + taxa_lca / 100) ** H - 1
 
+    # Poupança: regra oficial derivada da Selic informada acima, isenta de IR
+    taxa_poup_aa = taxa_poupanca_anual(selic / 100)
+    ret_poup = (1 + taxa_poup_aa) ** H - 1
+
     # Retorno real (descontando IPCA)
     def _real(ret_liq):
         return (1 + ret_liq) / (1 + ipca_f) ** H - 1
@@ -236,6 +245,14 @@ def render():
             "taxa_str": f"{taxa_lca:.2f}% (isento)",
             "Retorno Bruto": ret_lca,
             "Retorno Líquido": ret_lca,
+            "IR": 0.0,
+            "Isento": True,
+        },
+        {
+            "Produto": "Poupança",
+            "taxa_str": f"{taxa_poup_aa * 100:.2f}% (isento)",
+            "Retorno Bruto": ret_poup,
+            "Retorno Líquido": ret_poup,
             "IR": 0.0,
             "Isento": True,
         },
@@ -313,6 +330,7 @@ def render():
         "CDB": "#ce93d8",  # roxo
         "LCI": "#fff176",  # amarelo
         "LCA": "#ffcc80",  # laranja
+        "Poupança": "#90a4ae",  # cinza-azulado — associação visual a baixo rendimento
     }
 
     nomes = [p["Produto"] for p in produtos]

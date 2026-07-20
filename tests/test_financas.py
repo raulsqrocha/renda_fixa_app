@@ -29,6 +29,7 @@ from core.financas import (
     formatar_brl,
     retorno_mam_antecipado,
     _fator_pu_ntnb_unitario,
+    taxa_poupanca_anual,
     cupom_semestral,
     pu_ntnb,
     calcular_du,
@@ -69,6 +70,48 @@ class TestFormatarBrl:
         assert "R$ " in resultado
         assert "-" in resultado
         assert "1.234,56" in resultado
+
+
+# ---------------------------------------------------------------------------
+# Poupança (Lei 12.703/2012)
+# ---------------------------------------------------------------------------
+
+
+class TestTaxaPoupancaAnual:
+    def test_selic_acima_de_8_5_usa_meio_por_cento_ao_mes(self):
+        # Selic 14,75% (> 8,5%) -> 0,5% a.m. -> (1.005^12 - 1) ~= 6,17% a.a.
+        r = taxa_poupanca_anual(0.1475)
+        assert abs(r - ((1.005**12) - 1)) < 1e-9
+
+    def test_selic_abaixo_de_8_5_usa_70_por_cento_da_selic(self):
+        selic = 0.07
+        selic_mensal = (1 + selic) ** (1 / 12) - 1
+        esperado = (1 + 0.70 * selic_mensal) ** 12 - 1
+        r = taxa_poupanca_anual(selic)
+        assert abs(r - esperado) < 1e-9
+
+    def test_limite_exato_8_5_usa_70_por_cento(self):
+        # 8,5% não é > 8,5%, então cai na regra dos 70%
+        r_exato = taxa_poupanca_anual(0.085)
+        r_um_bps_acima = taxa_poupanca_anual(0.0851)
+        assert r_exato != ((1.005**12) - 1)
+        assert abs(r_um_bps_acima - ((1.005**12) - 1)) < 1e-6
+
+    def test_selic_alta_nao_aumenta_rendimento(self):
+        # Acima de 8,5%, a poupança trava em 0,5% a.m. independente da Selic subir mais
+        r_14 = taxa_poupanca_anual(0.14)
+        r_25 = taxa_poupanca_anual(0.25)
+        assert r_14 == r_25
+
+    def test_selic_baixa_reduz_rendimento(self):
+        r_baixo = taxa_poupanca_anual(0.05)
+        r_medio = taxa_poupanca_anual(0.08)
+        assert r_baixo < r_medio
+
+    def test_tr_positiva_aumenta_rendimento(self):
+        sem_tr = taxa_poupanca_anual(0.1475, tr_aa=0.0)
+        com_tr = taxa_poupanca_anual(0.1475, tr_aa=0.01)
+        assert com_tr > sem_tr
 
 
 # ---------------------------------------------------------------------------

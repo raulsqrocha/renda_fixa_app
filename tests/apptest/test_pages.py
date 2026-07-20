@@ -82,7 +82,7 @@ class TestQualAtivo:
 
 
 class TestCompararProdutos:
-    def test_carrega_com_os_seis_produtos(self):
+    def test_carrega_com_os_sete_produtos(self):
         at = _run("pages/2_Comparar_Produtos.py")
         labels_metric = " ".join(m.label for m in at.metric)
         for produto in (
@@ -92,6 +92,7 @@ class TestCompararProdutos:
             "CDB",
             "LCI",
             "LCA",
+            "Poupança",
         ):
             assert produto in labels_metric, f"produto {produto!r} não encontrado"
         # Um dos produtos é destacado como vencedor do horizonte padrão

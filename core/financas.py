@@ -550,6 +550,34 @@ def retorno_saida_antecipada(
     return ratio ** (1 / H) - 1
 
 
+# ---------------------------------------------------------------------------
+# Poupança (Lei 12.703/2012)
+# ---------------------------------------------------------------------------
+
+
+def taxa_poupanca_anual(selic_aa: float, tr_aa: float = 0.0) -> float:
+    """
+    Rendimento anualizado da poupança, em decimal (ex: 0.0617 = 6,17% a.a.).
+
+    Regra oficial (Lei 12.703/2012):
+      - Selic meta > 8,5% a.a.: 0,5% ao mês + TR
+      - Selic meta <= 8,5% a.a.: 70% da Selic (equivalente mensal) + TR
+
+    Isenta de IR para pessoa física em qualquer prazo. TR (Taxa Referencial)
+    tem ficado próxima de 0% na maior parte dos últimos anos — o padrão
+    tr_aa=0.0 é uma aproximação razoável quando não informada.
+
+    Parâmetros em decimal (ex: 0.1475 = 14,75% a.a.).
+    """
+    if selic_aa > 0.085:
+        taxa_mensal = 0.005
+    else:
+        selic_mensal = (1 + selic_aa) ** (1 / 12) - 1
+        taxa_mensal = 0.70 * selic_mensal
+    taxa_anual_sem_tr = (1 + taxa_mensal) ** 12 - 1
+    return (1 + taxa_anual_sem_tr) * (1 + tr_aa) - 1
+
+
 def aliquota_ir_renda_fixa(horizonte_anos: float) -> float:
     """Alíquota regressiva de IR sobre renda fixa (Tesouro Direto)."""
     dias = horizonte_anos * 365
