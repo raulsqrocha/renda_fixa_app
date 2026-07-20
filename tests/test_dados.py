@@ -130,6 +130,15 @@ class TestCalcularVnaViaBcb:
     def test_serie_completa_maior_que_base(self):
         assert calcular_vna_via_bcb(_ipca_fallback()) > VNA_BASE_DEZ2014
 
+    def test_serie_completa_dentro_de_faixa_plausivel_anbima(self):
+        # Regressão: reconciliado contra o VNA oficial ANBIMA (R$4.743,207764,
+        # código Selic, 07/07/2026). Tolerância de ±2% cobre a defasagem
+        # natural entre a série de fallback local e a data de referência da
+        # ANBIMA, sem permitir que a base histórica volte a divergir ~7-8%
+        # como antes da recalibração de VNA_BASE_DEZ2014 (2.712,00 -> 2.521,24).
+        vna = calcular_vna_via_bcb(_ipca_fallback())
+        assert 4_648.0 < vna < 4_838.0
+
 
 # ---------------------------------------------------------------------------
 # calcular_vna_em_data

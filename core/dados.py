@@ -69,8 +69,14 @@ URL_TESOURO_CSV = (
     "796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv"
 )
 
-# VNA da NTN-B em dez/2014 (fonte: ANBIMA histórico) — base para cálculo via BCB
-VNA_BASE_DEZ2014 = 2_712.00
+# VNA da NTN-B em dez/2014 (fonte: ANBIMA histórico) — base para cálculo via BCB.
+# Recalibrado em 21/07/2026: reconciliado contra o VNA oficial ANBIMA de
+# R$4.743,207764 (código Selic, 07/07/2026) — o valor anterior (2.712,00)
+# estava ~7,6% alto, inflando todo R$ absoluto derivado do VNA (PU, MaM,
+# "no vencimento", consolidado). Retornos percentuais não eram afetados,
+# pois o VNA cancela algebricamente nas razões. Ver teste de regressão em
+# tests/test_dados.py que trava o VNA numa faixa plausível.
+VNA_BASE_DEZ2014 = 2_521.24
 
 # VNA dinâmico: VNA_BASE_DEZ2014 corrigido por IPCA ~5% a.a. até hoje
 # Usado apenas quando a API do BCB estiver offline (df_ipca vazio)
