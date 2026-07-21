@@ -16,8 +16,17 @@ jobs:
       - name: Acessar o app para evitar hibernação
         run: |
           echo "Pingando https://fixacf.streamlit.app ..."
-          status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 -L https://fixacf.streamlit.app/)
-          echo "Status HTTP: $status"
-          if [ "$status" -ge 400 ]; then
-            echo "::warning::App respondeu com status $status — pode estar hibernando ou fora do ar."
+          # --max-redirs limita o número de redirecionamentos seguidos por -L; sem
+          # isso, um app atrás de parede de autenticação (redireciona sempre para
+          # login) faz o curl estourar com exit 47 (too many redirects) e falhar
+          # o job — isso já aconteceu de verdade (run #1) e ficou mandando email
+          # de falha a cada 10min em horário comercial. O if/else abaixo garante
+          # que o job nunca falha "de vermelho": só anota um aviso.
+          if status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 --max-redirs 10 -L https://fixacf.streamlit.app/ 2>&1); then
+            echo "Status HTTP: $status"
+            if [ "$status" -ge 400 ]; then
+              echo "::warning::App respondeu com status $status — pode estar hibernando ou fora do ar."
+            fi
+          else
+            echo "::warning::Não foi possível completar a requisição (possível parede de autenticação/redirecionamentos em excesso, ou app inacessível). Ver achado sobre acesso privado na auditoria mais recente."
           fi
