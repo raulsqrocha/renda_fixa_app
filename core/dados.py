@@ -175,16 +175,16 @@ CATEGORIAS_TITULOS: dict = {
     "Tesouro Educar+": [k for k in TITULOS_CONFIG if "Educar+" in k],
 }
 
-# Taxas de referência para o fallback — extraídas do Tesouro Transparente em 13/07/2026
+# Taxas de referência para o fallback — extraídas do Tesouro Transparente em 24/08/2026
 _TAXAS_REF: dict = {
     # IPCA+ Principal
-    "Tesouro IPCA+ 2032": 8.09,
-    "Tesouro IPCA+ 2040": 7.53,
-    "Tesouro IPCA+ 2050": 7.21,
+    "Tesouro IPCA+ 2032": 7.97,
+    "Tesouro IPCA+ 2040": 7.47,
+    "Tesouro IPCA+ 2050": 7.27,
     # IPCA+ Juros Semestrais
-    "Tesouro IPCA+ com Juros Semestrais 2037": 7.83,
-    "Tesouro IPCA+ com Juros Semestrais 2045": 7.49,
-    "Tesouro IPCA+ com Juros Semestrais 2060": 7.36,
+    "Tesouro IPCA+ com Juros Semestrais 2037": 7.67,
+    "Tesouro IPCA+ com Juros Semestrais 2045": 7.47,
+    "Tesouro IPCA+ com Juros Semestrais 2060": 7.34,
     # Renda+ Aposentadoria Extra
     "Tesouro RendA+ 2030": 7.82,
     "Tesouro RendA+ 2035": 7.65,
@@ -198,20 +198,20 @@ _TAXAS_REF: dict = {
     "Tesouro Educar+ 2027": 8.12,
     "Tesouro Educar+ 2028": 8.04,
     "Tesouro Educar+ 2029": 7.97,
-    "Tesouro Educar+ 2030": 8.34,
-    "Tesouro Educar+ 2031": 8.28,
-    "Tesouro Educar+ 2032": 8.21,
-    "Tesouro Educar+ 2033": 8.14,
-    "Tesouro Educar+ 2034": 8.07,
-    "Tesouro Educar+ 2035": 8.0,
-    "Tesouro Educar+ 2036": 7.93,
-    "Tesouro Educar+ 2037": 7.87,
-    "Tesouro Educar+ 2038": 7.8,
-    "Tesouro Educar+ 2039": 7.73,
-    "Tesouro Educar+ 2040": 7.66,
-    "Tesouro Educar+ 2041": 7.59,
-    "Tesouro Educar+ 2042": 7.53,
-    "Tesouro Educar+ 2043": 7.47,
+    "Tesouro Educar+ 2030": 7.89,
+    "Tesouro Educar+ 2031": 7.91,
+    "Tesouro Educar+ 2032": 7.95,
+    "Tesouro Educar+ 2033": 7.94,
+    "Tesouro Educar+ 2034": 7.93,
+    "Tesouro Educar+ 2035": 7.89,
+    "Tesouro Educar+ 2036": 7.84,
+    "Tesouro Educar+ 2037": 7.77,
+    "Tesouro Educar+ 2038": 7.69,
+    "Tesouro Educar+ 2039": 7.62,
+    "Tesouro Educar+ 2040": 7.56,
+    "Tesouro Educar+ 2041": 7.51,
+    "Tesouro Educar+ 2042": 7.47,
+    "Tesouro Educar+ 2043": 7.44,
     "Tesouro Educar+ 2044": 7.41,
 }
 
